@@ -38,6 +38,7 @@ Homebrew 自动安装依赖 macmon，并将 ChipBar 放进应用程序。应用�
 ```sh
 brew update
 brew upgrade --cask wwwwzzzzkkkk/chipbar/chipbar
+open -a ChipBar
 # 卸载 ChipBar，保留 macmon
 brew uninstall --cask wwwwzzzzkkkk/chipbar/chipbar
 ```
@@ -114,6 +115,43 @@ dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/settings.png -
 “找不到 macmon”时手动选择路径。若计数器或芯片不支持，在相同机器运行上述真实采样命令，检查 macmon 本身的支持情况。
 
 单元测试运行需要 macOS 14+ 与 Swift 6 的 Swift Testing；应用运行最低版本仍为 macOS 13。`test.sh` 会为只有 Command Line Tools 的环境补充测试框架和插件路径，并使用独立执行文件避开 File Provider 测试包签名问题。
+
+## 版本管理与发版
+
+版本号只在根目录 `VERSION` 中维护。构建自动写入应用的版本和构建编号，设置面板显示安装版本。`CHANGELOG.md` 记录每次更新；Release 和 Homebrew 记录各版本的文件校验值。
+
+完成代码修改后先提交、上传到 `main`，在 `CHANGELOG.md` 的 `[Unreleased]` 区域写更新说明，然后执行：
+
+```sh
+# 1.0.0 → 1.0.1：修复、维护更新
+./scripts/release.sh patch
+
+# 新功能：递增中间版本号
+./scripts/release.sh minor
+
+# 也可指定明确的新版本
+./scripts/release.sh 2.0.0
+```
+
+脚本要求干净的 `main` 且与远程一致，拒绝旧版本或重复标签。它递增 `VERSION`、归档更新记录、提交并一次性上传版本提交和不可覆盖的 Git 标签。GitHub Actions 随后在 Apple Silicon macOS 环境中运行版本测试、解析测试、进程故障检查，构建并检查签名，发布应用 ZIP 和 `SHA256SUMS`，最后更新 `main` 上的 Homebrew Cask。无需手动填写 Cask 校验值。
+
+在 GitHub 的 **Actions → Release** 查看进度。若发布中断，可选择 **Run workflow**，输入已存在的 `vX.Y.Z` 标签修复发布；已有 Release 的应用文件不会被覆盖，Homebrew 使用 GitHub 已发布文件的校验值，也不会退回更旧版本。
+
+发版完成后本机运行 `git pull --ff-only` 同步 Homebrew 配置提交。其他 Mac 使用上面的 `brew update` / `brew upgrade --cask ...` 更新。该流程沿用本地 ad-hoc 签名，不会自动取得 Developer ID 或公证。
+
+普通提交与 Pull Request 会触发 CI，只测试、生成可下载的构建产物，不发布正式版本。自动更新 Cask 的机器人提交使用 GitHub 的工作流令牌，不会递归触发新一轮工作流。
+
+### 本地检查与打包
+
+```sh
+python3 -m unittest discover -s Tests/ReleaseTests -v
+./scripts/test.sh
+./scripts/build.sh
+python3 scripts/integration.py
+python3 scripts/version.py package
+```
+
+打包生成 `dist/ChipBar-macOS-arm64.zip` 和 `dist/SHA256SUMS`；版本、完整性与签名检查失败时不会生成正式包。
 
 ## 源码布局
 

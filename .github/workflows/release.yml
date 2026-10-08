@@ -1,0 +1,53 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish or repair (e.g. v1.0.1)
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: chipbar-stable-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate manual tag input
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          python3 -c 'import os,re; assert re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+",os.environ["TAG"]), "Expected vX.Y.Z tag"'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - name: Check immutable version tag
+        env:
+          GITHUB_REF: refs/tags/${{ inputs.tag || github.ref_name }}
+        run: python3 scripts/version.py check-tag
+      - name: Version management tests
+        run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Parser tests
+        run: ./scripts/test.sh
+      - name: Build arm64 app
+        run: ./scripts/build.sh
+      - name: Subprocess fault checks
+        run: python3 scripts/integration.py
+      - name: Package and verify signature
+        run: python3 scripts/version.py package
+      - name: Publish Release and update Homebrew
+        env:
+          GITHUB_REF: refs/tags/${{ inputs.tag || github.ref_name }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 scripts/version.py publish

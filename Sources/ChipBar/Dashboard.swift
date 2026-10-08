@@ -136,6 +136,8 @@ struct Dashboard: View {
     @ViewBuilder private var settingsPanel: some View {
             if state.showSettings {
                 VStack(alignment: .leading, spacing: 10) {
+                    Text("ChipBar \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版本")")
+                        .font(.caption).foregroundStyle(.secondary)
                     Picker("刷新间隔", selection: $monitor.interval) {
                         Text("1 秒").tag(1000); Text("2 秒").tag(2000)
                         Text("5 秒").tag(5000); Text("10 秒").tag(10000)

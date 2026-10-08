@@ -13,6 +13,8 @@ cask "chipbar" do
 
   app "ChipBar.app"
 
+  uninstall quit: "local.chipbar.monitor"
+
   caveats <<~EOS
     ChipBar is locally signed and not notarized. If macOS blocks opening it,
     allow ChipBar in System Settings > Privacy & Security.

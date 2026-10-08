@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version management tests
+        run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Parser tests
+        run: ./scripts/test.sh
+      - name: Build arm64 app
+        run: ./scripts/build.sh
+      - name: Subprocess fault checks
+        run: python3 scripts/integration.py
+      - name: Package and verify signature
+        run: python3 scripts/version.py package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChipBar-arm64-${{ github.sha }}
+          path: |
+            dist/ChipBar-macOS-arm64.zip
+            dist/SHA256SUMS
+          retention-days: 14
