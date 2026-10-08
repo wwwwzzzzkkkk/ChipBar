@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 import plistlib
 import tempfile
+import struct
 
 spec = importlib.util.spec_from_file_location("chipbar_version", Path(__file__).resolve().parents[2] / "scripts/version.py")
 version = importlib.util.module_from_spec(spec)
@@ -57,6 +58,29 @@ class VersionTests(unittest.TestCase):
                     with self.assertRaises(ValueError): version.package()
                     run.assert_not_called()
                 self.assertFalse((root / "dist" / version.ASSET).exists())
+
+    def test_icon_missing_corrupt_or_incomplete_blocks_packaging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Path(temp)
+            metadata = {"CFBundleIconFile": "AppIcon.icns"}
+            with self.assertRaises(ValueError): version.validate_icon(app, {})
+            with self.assertRaises(ValueError): version.validate_icon(app, metadata)
+            icon = app / "Contents/Resources/AppIcon.icns"
+            icon.parent.mkdir(parents=True)
+            for data in [b"not an icon", b"icns" + struct.pack(">I", 8),
+                         b"icns" + struct.pack(">I", 16) + b"ic10" + struct.pack(">I", 100)]:
+                icon.write_bytes(data)
+                with self.assertRaises(ValueError): version.validate_icon(app, metadata)
+
+    def test_icon_accepts_native_small_and_retina_representation_families(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Path(temp)
+            icon = app / "Contents/Resources/AppIcon.icns"
+            icon.parent.mkdir(parents=True)
+            for small in [(b"ic04", b"ic05"), (b"icp4", b"icp5"), (b"is32", b"s8mk", b"il32", b"l8mk")]:
+                chunks = b"".join(kind + struct.pack(">I", 12) + b"test" for kind in (*small, b"ic07", b"ic08", b"ic09", b"ic10"))
+                icon.write_bytes(b"icns" + struct.pack(">I", len(chunks) + 8) + chunks)
+                version.validate_icon(app, {"CFBundleIconFile": "AppIcon.icns"})
 
 
 if __name__ == "__main__": unittest.main()

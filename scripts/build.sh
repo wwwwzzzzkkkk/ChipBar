@@ -7,6 +7,7 @@ trap 'rm -rf "$STAGE"' EXIT
 APP="$STAGE/ChipBar.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp -X .build/arm64-apple-macosx/release/ChipBar "$APP/Contents/MacOS/ChipBar"
+./scripts/icon.sh "$APP/Contents/Resources"
 VERSION="$(python3 scripts/version.py show)"
 python3 - "$APP" "$VERSION" <<'PYINFO'
 import plistlib, sys
@@ -16,6 +17,7 @@ metadata = {
     "CFBundleIdentifier": "local.chipbar.monitor",
     "CFBundleName": "ChipBar", "CFBundleDisplayName": "ChipBar",
     "CFBundleExecutable": "ChipBar", "CFBundlePackageType": "APPL",
+    "CFBundleIconFile": "AppIcon.icns",
     "CFBundleShortVersionString": version, "CFBundleVersion": version,
     "LSMinimumSystemVersion": "13.0", "LSUIElement": True,
     "NSHighResolutionCapable": True,

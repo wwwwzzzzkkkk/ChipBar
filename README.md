@@ -4,6 +4,10 @@
 
 本次实测与未验证范围见 [VALIDATION.md](VALIDATION.md)。
 
+## 应用图标
+
+原稿和生成提示词保存在 [Assets](Assets/README.md)。构建时自动生成 `AppIcon.icns` 并写入应用图标声明，Finder / 应用程序目录和弹窗标题使用统一图标。菜单栏继续显示适配系统主题的单色闪电与功率文字。
+
 ## 与 macmon 的关系
 
 ChipBar 是围绕 macmon 继续开发的原生菜单栏客户端。硬件采样由 [vladkens/macmon](https://github.com/vladkens/macmon) 提供，本项目负责 macOS 界面、趋势展示、设置和采样生命周期管理。感谢 macmon 上游作者与贡献者。

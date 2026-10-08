@@ -12,6 +12,8 @@ struct Dashboard: View {
     @ObservedObject var monitor: Monitor
     @StateObject private var state: DashboardState
     private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
+    private let appIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
+        .flatMap { NSImage(contentsOf: $0) }
 
     init(monitor: Monitor, showSettings: Bool = false, state: DashboardState? = nil) {
         self.monitor = monitor
@@ -36,8 +38,13 @@ struct Dashboard: View {
 
     @ViewBuilder private var header: some View {
             HStack(spacing: 10) {
-                Image(systemName: "waveform.path.ecg")
-                    .font(.title2).foregroundStyle(accent)
+                if let appIcon {
+                    Image(nsImage: appIcon).resizable().interpolation(.high)
+                        .frame(width: 32, height: 32).accessibilityHidden(true)
+                } else {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.title2).foregroundStyle(accent)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text("ChipBar").font(.headline)
                     Text(monitor.sample?.chip ?? monitor.hardware)

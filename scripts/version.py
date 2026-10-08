@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -116,6 +117,34 @@ def prepare(requested):
     print(f"已提交 {tag}。GitHub Actions 将测试、打包、发布并更新 Homebrew。")
 
 
+def validate_icon(app, metadata):
+    name = metadata.get("CFBundleIconFile")
+    if name != "AppIcon.icns":
+        raise ValueError("应用未声明 AppIcon.icns，停止打包。")
+    resource = app / "Contents/Resources" / name
+    if not resource.is_file():
+        raise ValueError("应用缺少图标资源，停止打包。")
+    data = resource.read_bytes()
+    if len(data) < 8 or data[:4] != b"icns" or struct.unpack(">I", data[4:8])[0] != len(data):
+        raise ValueError("应用图标不是有效 ICNS 文件。")
+    position = 8
+    types = set()
+    while position < len(data):
+        if position + 8 > len(data):
+            raise ValueError("ICNS 图标数据被截断。")
+        kind = data[position:position + 4]
+        length = struct.unpack(">I", data[position + 4:position + 8])[0]
+        if length < 8 or position + length > len(data):
+            raise ValueError("ICNS 图标尺寸数据无效。")
+        types.add(kind)
+        position += length
+    # Legacy/Retina small icons and the 1024-pixel representation are required.
+    small16 = bool(types & {b"icp4", b"ic04"}) or {b"is32", b"s8mk"}.issubset(types)
+    small32 = bool(types & {b"icp5", b"ic05"}) or {b"il32", b"l8mk"}.issubset(types)
+    if not small16 or not small32 or not {b"ic07", b"ic08", b"ic09", b"ic10"}.issubset(types):
+        raise ValueError("ICNS 图标缺少必要的显示尺寸。")
+
+
 def package():
     version = current_version()
     app = ROOT / "dist/ChipBar.app"
@@ -123,6 +152,7 @@ def package():
         metadata = plistlib.load(stream)
     if metadata.get("CFBundleShortVersionString") != version or metadata.get("CFBundleVersion") != version:
         raise ValueError("应用版本与 VERSION 不一致，请重新构建。")
+    validate_icon(app, metadata)
     path = ROOT / "dist" / ASSET
     # Preserve executable mode but omit Finder/File Provider metadata from the ZIP.
     with tempfile.TemporaryDirectory(prefix="chipbar-package-") as staging:
