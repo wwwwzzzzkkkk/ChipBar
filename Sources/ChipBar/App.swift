@@ -4,24 +4,20 @@ import ChipBarCore
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var monitor: Monitor?
-    func applicationWillTerminate(_ notification: Notification) { Self.monitor?.stop(forQuit: true) }
-}
-
-struct ChipBarApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var monitor: Monitor
-    init() {
+    private var menuController: MenuController?
+    func applicationDidFinishLaunching(_ notification: Notification) {
         let monitor = Monitor()
-        AppDelegate.monitor = monitor
-        _monitor = StateObject(wrappedValue: monitor)
+        Self.monitor = monitor
+        let controller = MenuController(monitor: monitor)
+        menuController = controller
+        let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--menu-qa"), args.count > index + 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                controller.verifyUI(directory: args[index + 1])
+            }
+        }
     }
-    var body: some Scene {
-        MenuBarExtra {
-            Dashboard(monitor: monitor).onAppear { AppDelegate.monitor = monitor }
-        } label: {
-            Label(monitor.menuText, systemImage: "bolt.fill")
-        }.menuBarExtraStyle(.window)
-    }
+    func applicationWillTerminate(_ notification: Notification) { Self.monitor?.stop(forQuit: true) }
 }
 
 @main enum Launch {
@@ -31,7 +27,11 @@ struct ChipBarApp: App {
         if let index = args.firstIndex(of: "--snapshot"), args.count > index + 1 {
             snapshot(path: args[index + 1], settings: args.contains("--settings"), light: args.contains("--light")); return
         }
-        ChipBarApp.main()
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        withExtendedLifetime(delegate) { app.run() }
     }
 
     /// Bounded live probe, using exactly the same streaming client and decoder as the UI.

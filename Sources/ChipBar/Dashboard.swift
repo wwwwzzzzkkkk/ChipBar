@@ -13,9 +13,9 @@ struct Dashboard: View {
     @StateObject private var state: DashboardState
     private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
 
-    init(monitor: Monitor, showSettings: Bool = false) {
+    init(monitor: Monitor, showSettings: Bool = false, state: DashboardState? = nil) {
         self.monitor = monitor
-        _state = StateObject(wrappedValue: DashboardState(showSettings: showSettings))
+        _state = StateObject(wrappedValue: state ?? DashboardState(showSettings: showSettings))
     }
 
     var body: some View {
@@ -31,6 +31,7 @@ struct Dashboard: View {
             footer
         }
         .padding(20).frame(width: 390)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private var header: some View {
@@ -98,9 +99,16 @@ struct Dashboard: View {
                     }
                     .chartYScale(domain: 0...max(1, (monitor.history.compactMap { $0.power(state.chartMetric) }.max() ?? 1) * 1.15))
                     .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                    .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { _ in
-                        AxisValueLabel(format: .dateTime.hour().minute().second())
-                    } }
+                    .chartXAxis {
+                        AxisMarks(values: trendAxisDates) { value in
+                            AxisValueLabel(anchor: value.index == 0 ? .topLeading : value.index == trendAxisDates.count - 1 ? .topTrailing : .top) {
+                                if let date = value.as(Date.self) {
+                                    Text(date, format: trendDateFormat)
+                                        .font(.caption2).fixedSize(horizontal: true, vertical: false)
+                                }
+                            }
+                        }
+                    }
                     .frame(height: 115)
                 }
                 HStack {
@@ -177,6 +185,17 @@ struct Dashboard: View {
                 .font(.system(.body, design: .rounded).weight(.semibold)).monospacedDigit()
         }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var trendAxisDates: [Date] {
+        guard let first = monitor.history.first?.date, let last = monitor.history.last?.date else { return [] }
+        guard last > first else { return [first] }
+        return [first, first.addingTimeInterval(last.timeIntervalSince(first) / 2), last]
+    }
+
+    private var trendDateFormat: Date.FormatStyle {
+        let duration = (monitor.history.last?.date ?? Date()).timeIntervalSince(monitor.history.first?.date ?? Date())
+        return duration >= 120 ? .dateTime.hour().minute() : .dateTime.minute().second()
     }
 
     private var average: Double? {

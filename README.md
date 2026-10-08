@@ -1,6 +1,6 @@
 # ChipBar
 
-原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + MenuBarExtra + Swift Charts；无需管理员权限。
+原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPopover + Swift Charts；无需管理员权限。
 
 本次实测与未验证范围见 [VALIDATION.md](VALIDATION.md)。
 
@@ -50,6 +50,8 @@ brew uninstall --cask wwwwzzzzkkkk/chipbar/chipbar
 3. 点击“设置”，选择 1 / 2 / 5 / 10 秒刷新间隔，或切换菜单栏显示合计 / CPU / GPU。默认两秒。
 4. 默认查找 `/opt/homebrew/bin/macmon`，其次 `/usr/local/bin/macmon`。若安装在其他位置，点击“选择 macmon…”，按 ⌘⇧G 输入所在路径，选择可执行文件。所选程序以当前用户权限运行，请选择可信的 macmon 文件。
 5. “暂停”停止 macmon 进程；“继续”恢复。睡眠时停止，唤醒后自动恢复。设置保存在本机，趋势只保存在内存中，退出即清空。
+
+菜单栏使用原生状态栏按钮直接显示功率文字，避免系统把标签折叠成单个图标。弹窗按实际内容调整高度；小屏幕上可滚动查看完整设置。
 
 两台 Mac 各运行一份应用、各使用本机 macmon。本版本不提供两台机器之间的远程汇总。
 
@@ -104,6 +106,8 @@ python3 scripts/integration.py
 
 # 使用真实数据渲染原生界面 PNG，约七秒后退出
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/preview.png
+# 验证实际菜单栏按钮和弹窗（需本机 macmon；约八秒后退出）
+dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/menu-qa
 # 浅色模式与设置展开的预览
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/settings.png --settings --light
 ```
@@ -159,7 +163,8 @@ python3 scripts/version.py package
 - `Sources/ChipBar/StreamClient.swift`：进程与标准输出 / 错误读取。
 - `Sources/ChipBar/Monitor.swift`：状态、重试、过期检测、睡眠恢复与偏好设置。
 - `Sources/ChipBar/Dashboard.swift`：弹窗、趋势与设置。
-- `Sources/ChipBar/App.swift`：菜单栏入口、诊断与原生渲染工具。
+- `Sources/ChipBar/App.swift`：应用生命周期、诊断与原生渲染工具。
+- `Sources/ChipBar/MenuController.swift`：菜单栏功率文字、原生弹窗尺寸和小屏滚动，以及真实菜单栏 UI 检查。
 - `Tests/ChipBarCoreTests`：真实 M1 Pro 夹具、缺失 / 非法值、分片与缓冲边界测试。
 
 接口依据：[JSON pipe 实现](https://github.com/vladkens/macmon/blob/main/src/app/main.rs)、[指标定义](https://github.com/vladkens/macmon/blob/main/src/metrics.rs)，核对日期 2026-10-08；同时以本机 0.9.0 实际输出验证。上游链接可能随版本变化。本项目调用独立安装的 macmon，不包含或修改其可执行文件。
