@@ -1,8 +1,14 @@
 # ChipBar
 
-原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPopover + Swift Charts；无需管理员权限。
+原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + Swift Charts；无需管理员权限。
 
 本次实测与未验证范围见 [VALIDATION.md](VALIDATION.md)。
+
+## 菜单栏面板材质
+
+macOS 26 及更新版本使用系统原生 `NSGlassEffectView`，提供 Liquid Glass 的透明、折射与边缘高光。旧版本 macOS 使用 `NSVisualEffectView` 系统磨砂材质。面板随明暗模式变化，并尊重系统“降低透明度”辅助功能设置。
+
+点击菜单栏打开悬浮面板；再次点击、点击其他位置或按 Esc 可关闭。图标、数据与图表保持上一版样式。
 
 ## 应用图标
 
@@ -112,6 +118,9 @@ python3 scripts/integration.py
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/preview.png
 # 验证实际菜单栏按钮和弹窗（需本机 macmon；约八秒后退出）
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/menu-qa
+# 明暗模式、旧系统材质验证
+dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/light --light
+dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/legacy --legacy-material
 # 浅色模式与设置展开的预览
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/settings.png --settings --light
 ```
@@ -168,7 +177,8 @@ python3 scripts/version.py package
 - `Sources/ChipBar/Monitor.swift`：状态、重试、过期检测、睡眠恢复与偏好设置。
 - `Sources/ChipBar/Dashboard.swift`：弹窗、趋势与设置。
 - `Sources/ChipBar/App.swift`：应用生命周期、诊断与原生渲染工具。
-- `Sources/ChipBar/MenuController.swift`：菜单栏功率文字、原生弹窗尺寸和小屏滚动，以及真实菜单栏 UI 检查。
+- `Sources/ChipBar/MenuController.swift`：菜单栏功率文字、透明悬浮面板、外部点击关闭与小屏滚动，以及真实菜单栏 UI 检查。
+- `Sources/ChipBar/PanelMaterialView.swift`：原生 Liquid Glass 与旧系统磨砂材质适配。
 - `Tests/ChipBarCoreTests`：真实 M1 Pro 夹具、缺失 / 非法值、分片与缓冲边界测试。
 
 接口依据：[JSON pipe 实现](https://github.com/vladkens/macmon/blob/main/src/app/main.rs)、[指标定义](https://github.com/vladkens/macmon/blob/main/src/metrics.rs)，核对日期 2026-10-08；同时以本机 0.9.0 实际输出验证。上游链接可能随版本变化。本项目调用独立安装的 macmon，不包含或修改其可执行文件。
