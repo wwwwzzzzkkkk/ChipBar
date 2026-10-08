@@ -8,7 +8,7 @@ cask "chipbar" do
   homepage "https://github.com/wwwwzzzzkkkk/ChipBar"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
   depends_on formula: "macmon"
 
   app "ChipBar.app"
