@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 自动工作流使用 Node.js 24 运行环境。
+
 ## [1.0.1] - 2026-10-08
 
 - 统一版本号、应用打包、GitHub Release 与 Homebrew 更新。

@@ -11,7 +11,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Version management tests
         run: python3 -m unittest discover -s Tests/ReleaseTests -v
       - name: Parser tests
@@ -22,7 +22,7 @@ jobs:
         run: python3 scripts/integration.py
       - name: Package and verify signature
         run: python3 scripts/version.py package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ChipBar-arm64-${{ github.sha }}
           path: |
