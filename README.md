@@ -21,6 +21,29 @@ ChipBar 是围绕 macmon 继续开发的原生菜单栏客户端。硬件采样�
 
 ## 使用
 
+### 通过 Homebrew 安装
+
+在 Apple Silicon Mac 的终端中运行（需要已安装 Homebrew）：
+
+```sh
+brew tap wwwwzzzzkkkk/chipbar https://github.com/wwwwzzzzkkkk/ChipBar.git
+brew install --cask wwwwzzzzkkkk/chipbar/chipbar
+open -a ChipBar
+```
+
+Homebrew 自动安装依赖 macmon，并将 ChipBar 放进应用程序。应用启动后显示在菜单栏。若 macOS 阻止打开，在“系统设置 → 隐私与安全性”选择“仍要打开”。
+
+以后更新或卸载：
+
+```sh
+brew update
+brew upgrade --cask wwwwzzzzkkkk/chipbar/chipbar
+# 卸载 ChipBar，保留 macmon
+brew uninstall --cask wwwwzzzzkkkk/chipbar/chipbar
+```
+
+### 手动运行
+
 1. 打开 `dist/ChipBar.app`，菜单栏出现 `⚡ 2.3 W` 形式的实时读数。
 2. 点击菜单栏图标，查看 CPU / GPU / ANE、芯片合计、温度与最近十分钟趋势。
 3. 点击“设置”，选择 1 / 2 / 5 / 10 秒刷新间隔，或切换菜单栏显示合计 / CPU / GPU。默认两秒。
