@@ -33,6 +33,11 @@ def current_version():
     return value
 
 
+def declared_tag():
+    # Do not override GitHub's reserved GITHUB_* environment variables.
+    return os.environ.get("CHIPBAR_RELEASE_TAG") or os.environ.get("GITHUB_REF", "").removeprefix("refs/tags/")
+
+
 def next_version(current, requested):
     major, minor, patch = version_tuple(current)
     choices = {"patch": f"{major}.{minor}.{patch + 1}",
@@ -138,8 +143,7 @@ def package():
 def publish():
     version = current_version()
     tag = f"v{version}"
-    ref = os.environ.get("GITHUB_REF", "")
-    if ref != f"refs/tags/{tag}":
+    if declared_tag() != tag:
         raise ValueError("仅在与 VERSION 一致的 GitHub 标签发布任务中执行 publish。")
     asset = ROOT / "dist" / ASSET
     existing = subprocess.run(["gh", "release", "view", tag, "--repo", REPO], capture_output=True)
@@ -196,7 +200,7 @@ def main():
         elif args.command == "package": package()
         elif args.command == "publish": publish()
         elif args.command == "check-tag":
-            if os.environ.get("GITHUB_REF") != f"refs/tags/v{current_version()}":
+            if declared_tag() != f"v{current_version()}":
                 raise ValueError("Git 标签与 VERSION 不一致。")
             tagged = run("git", "rev-parse", f"refs/tags/v{current_version()}^{{commit}}", capture=True)
             if tagged != run("git", "rev-parse", "HEAD", capture=True):
