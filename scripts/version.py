@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "wwwwzzzzkkkk/ChipBar"
@@ -37,6 +38,11 @@ def current_version():
 def declared_tag():
     # Do not override GitHub's reserved GITHUB_* environment variables.
     return os.environ.get("CHIPBAR_RELEASE_TAG") or os.environ.get("GITHUB_REF", "").removeprefix("refs/tags/")
+
+
+def release_date(instant=None):
+    instant = instant or datetime.datetime.now(datetime.timezone.utc)
+    return instant.astimezone(ZoneInfo(os.environ.get("CHIPBAR_RELEASE_TIMEZONE", "Asia/Singapore"))).date().isoformat()
 
 
 def next_version(current, requested):
@@ -106,7 +112,7 @@ def prepare(requested):
     if subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/tags/{tag}"], cwd=ROOT).returncode == 0:
         raise ValueError(f"标签 {tag} 已存在；不可覆盖旧版本。")
     log = ROOT / "CHANGELOG.md"
-    changed = release_changelog(log.read_text(), version, datetime.datetime.now(datetime.timezone.utc).date().isoformat())
+    changed = release_changelog(log.read_text(), version, release_date())
     (ROOT / "VERSION").write_text(version + "\n")
     log.write_text(changed)
     run("git", "add", "VERSION", "CHANGELOG.md")

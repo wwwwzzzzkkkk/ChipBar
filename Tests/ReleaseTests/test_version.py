@@ -5,6 +5,7 @@ from unittest.mock import patch
 import plistlib
 import tempfile
 import struct
+import datetime
 
 spec = importlib.util.spec_from_file_location("chipbar_version", Path(__file__).resolve().parents[2] / "scripts/version.py")
 version = importlib.util.module_from_spec(spec)
@@ -12,6 +13,10 @@ spec.loader.exec_module(version)
 
 
 class VersionTests(unittest.TestCase):
+    def test_release_date_uses_singapore_calendar_after_local_midnight(self):
+        instant = datetime.datetime(2026, 10, 8, 17, tzinfo=datetime.timezone.utc)
+        with patch.dict(version.os.environ, {"CHIPBAR_RELEASE_TIMEZONE": "Asia/Singapore"}):
+            self.assertEqual(version.release_date(instant), "2026-10-09")
     def test_stable_versions_and_apple_bundle_limits(self):
         self.assertEqual(version.version_tuple("1.2.3"), (1, 2, 3))
         for invalid in ["v1.0.0", "1.0", "1.0.0-beta", "01.0.0", "1.100.0", "1.0.100", "1.0.0\n"]:
