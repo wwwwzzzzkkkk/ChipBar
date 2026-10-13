@@ -1,0 +1,104 @@
+{
+  "revision": "v1.0.4",
+  "samples": 3000,
+  "spacing_ms": 1,
+  "stderr_bytes_per_sample": 4096,
+  "fixture_bytes": 2264,
+  "exit_code": 0,
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2\nBuildVersion:\t\t26B5086k\n",
+  "records": [
+    {
+      "seconds": 0.01,
+      "rss_kib": 32
+    },
+    {
+      "seconds": 1.01,
+      "rss_kib": 9248
+    },
+    {
+      "seconds": 2.03,
+      "rss_kib": 37056
+    },
+    {
+      "seconds": 3.05,
+      "rss_kib": 63184
+    },
+    {
+      "seconds": 4.06,
+      "rss_kib": 29392
+    },
+    {
+      "seconds": 5.06,
+      "rss_kib": 30224
+    },
+    {
+      "seconds": 6.08,
+      "rss_kib": 32416
+    },
+    {
+      "seconds": 19.78,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 20.79,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 21.81,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 22.82,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 23.83,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 24.84,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 25.85,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 26.86,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 27.87,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 28.88,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 29.9,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 30.9,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 31.91,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 32.93,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 33.94,
+      "rss_kib": 5328
+    },
+    {
+      "seconds": 34.95,
+      "rss_kib": 5328
+    }
+  ],
+  "probe_log": "samples=1000 resident_bytes=45203456 footprint_bytes=40305120 compressed_bytes=0\nsamples=2000 resident_bytes=65961984 footprint_bytes=77693408 compressed_bytes=16629760\nsamples=3000 resident_bytes=33718272 footprint_bytes=114655736 compressed_bytes=85819392\nbefore_stop resident_bytes=5636096 footprint_bytes=114672120 compressed_bytes=113868800\n"
+}

@@ -1,0 +1,152 @@
+{
+  "revision": "working-tree",
+  "samples": 20000,
+  "spacing_ms": 1,
+  "stderr_bytes_per_sample": 0,
+  "fixture_bytes": 2264,
+  "exit_code": 0,
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2\nBuildVersion:\t\t26B5086k\n",
+  "records": [
+    {
+      "seconds": 0.01,
+      "rss_kib": 32
+    },
+    {
+      "seconds": 1.02,
+      "rss_kib": 7248
+    },
+    {
+      "seconds": 2.03,
+      "rss_kib": 7248
+    },
+    {
+      "seconds": 3.04,
+      "rss_kib": 7280
+    },
+    {
+      "seconds": 4.04,
+      "rss_kib": 6544
+    },
+    {
+      "seconds": 5.08,
+      "rss_kib": 6544
+    },
+    {
+      "seconds": 6.08,
+      "rss_kib": 6624
+    },
+    {
+      "seconds": 7.11,
+      "rss_kib": 6736
+    },
+    {
+      "seconds": 8.13,
+      "rss_kib": 6736
+    },
+    {
+      "seconds": 9.16,
+      "rss_kib": 6784
+    },
+    {
+      "seconds": 10.18,
+      "rss_kib": 6784
+    },
+    {
+      "seconds": 11.19,
+      "rss_kib": 6784
+    },
+    {
+      "seconds": 12.21,
+      "rss_kib": 6720
+    },
+    {
+      "seconds": 13.22,
+      "rss_kib": 6736
+    },
+    {
+      "seconds": 14.23,
+      "rss_kib": 6736
+    },
+    {
+      "seconds": 15.25,
+      "rss_kib": 6688
+    },
+    {
+      "seconds": 16.25,
+      "rss_kib": 6656
+    },
+    {
+      "seconds": 17.27,
+      "rss_kib": 6656
+    },
+    {
+      "seconds": 18.28,
+      "rss_kib": 6512
+    },
+    {
+      "seconds": 19.29,
+      "rss_kib": 6464
+    },
+    {
+      "seconds": 20.29,
+      "rss_kib": 6432
+    },
+    {
+      "seconds": 21.31,
+      "rss_kib": 6464
+    },
+    {
+      "seconds": 22.32,
+      "rss_kib": 6432
+    },
+    {
+      "seconds": 23.34,
+      "rss_kib": 6512
+    },
+    {
+      "seconds": 24.35,
+      "rss_kib": 6496
+    },
+    {
+      "seconds": 25.36,
+      "rss_kib": 6496
+    },
+    {
+      "seconds": 26.36,
+      "rss_kib": 6512
+    },
+    {
+      "seconds": 27.38,
+      "rss_kib": 6512
+    },
+    {
+      "seconds": 28.38,
+      "rss_kib": 6512
+    },
+    {
+      "seconds": 29.4,
+      "rss_kib": 6528
+    },
+    {
+      "seconds": 30.41,
+      "rss_kib": 6528
+    },
+    {
+      "seconds": 31.42,
+      "rss_kib": 6528
+    },
+    {
+      "seconds": 32.43,
+      "rss_kib": 6528
+    },
+    {
+      "seconds": 33.43,
+      "rss_kib": 6512
+    },
+    {
+      "seconds": 34.45,
+      "rss_kib": 6512
+    }
+  ],
+  "probe_log": "samples=1000 resident_bytes=7421952 footprint_bytes=2507208 compressed_bytes=0\nsamples=2000 resident_bytes=6701056 footprint_bytes=2572744 compressed_bytes=786432\nsamples=3000 resident_bytes=6701056 footprint_bytes=2572744 compressed_bytes=786432\nsamples=4000 resident_bytes=6848512 footprint_bytes=2752968 compressed_bytes=819200\nsamples=5000 resident_bytes=6897664 footprint_bytes=2818504 compressed_bytes=835584\nsamples=6000 resident_bytes=6946816 footprint_bytes=2867656 compressed_bytes=835584\nsamples=7000 resident_bytes=6946816 footprint_bytes=2867656 compressed_bytes=835584\nsamples=8000 resident_bytes=6881280 footprint_bytes=2867656 compressed_bytes=901120\nsamples=9000 resident_bytes=6897664 footprint_bytes=2884040 compressed_bytes=901120\nsamples=10000 resident_bytes=6848512 footprint_bytes=2884040 compressed_bytes=950272\nsamples=11000 resident_bytes=6782976 footprint_bytes=2884040 compressed_bytes=1015808\nsamples=12000 resident_bytes=6668288 footprint_bytes=2900424 compressed_bytes=1146880\nsamples=13000 resident_bytes=6602752 footprint_bytes=2900424 compressed_bytes=1212416\nsamples=14000 resident_bytes=6619136 footprint_bytes=2900424 compressed_bytes=1196032\nsamples=15000 resident_bytes=6619136 footprint_bytes=2900424 compressed_bytes=1196032\nsamples=16000 resident_bytes=6602752 footprint_bytes=2900424 compressed_bytes=1212416\nsamples=17000 resident_bytes=6651904 footprint_bytes=2900424 compressed_bytes=1163264\nsamples=18000 resident_bytes=6668288 footprint_bytes=2900424 compressed_bytes=1146880\nsamples=19000 resident_bytes=6668288 footprint_bytes=2900424 compressed_bytes=1146880\nsamples=20000 resident_bytes=6684672 footprint_bytes=2916808 compressed_bytes=1146880\nbefore_stop resident_bytes=6684672 footprint_bytes=2916808 compressed_bytes=1146880\n"
+}

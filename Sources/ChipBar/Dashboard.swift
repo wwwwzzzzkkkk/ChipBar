@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 import ChipBarCore
 
 final class DashboardState: ObservableObject {
@@ -97,25 +96,9 @@ struct Dashboard: View {
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).frame(height: 115)
                 } else {
-                    Chart {
-                        ForEach(chartPoints) { point in
-                            LineMark(x: .value("时间", point.date), y: .value("W", point.power),
-                                     series: .value("连续采样", point.segment))
-                                .foregroundStyle(accent).interpolationMethod(.linear)
-                        }
-                    }
-                    .chartYScale(domain: 0...max(1, (monitor.history.compactMap { $0.power(state.chartMetric) }.max() ?? 1) * 1.15))
-                    .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                    .chartXAxis {
-                        AxisMarks(values: trendAxisDates) { value in
-                            AxisValueLabel(anchor: value.index == 0 ? .topLeading : value.index == trendAxisDates.count - 1 ? .topTrailing : .top) {
-                                if let date = value.as(Date.self) {
-                                    Text(date, format: trendDateFormat)
-                                        .font(.caption2).fixedSize(horizontal: true, vertical: false)
-                                }
-                            }
-                        }
-                    }
+                    PowerTrendPlot(points: chartPoints,
+                        maximum: max(1, (monitor.history.compactMap { $0.power(state.chartMetric) }.max() ?? 1) * 1.15),
+                        axisDates: trendAxisDates, dateFormat: trendDateFormat, accent: accent)
                     .frame(height: 115)
                 }
                 HStack {
@@ -211,22 +194,16 @@ struct Dashboard: View {
     }
 
     // Do not draw a line across sleep, restart or missing metric gaps.
-    private struct ChartPoint: Identifiable {
-        let id: UUID
-        let date: Date
-        let power: Double
-        let segment: Int
-    }
-    private var chartPoints: [ChartPoint] {
+    private var chartPoints: [PowerTrendPlot.Point] {
         var segment = 0
         var previous: Sample?
-        var points: [ChartPoint] = []
+        var points: [PowerTrendPlot.Point] = []
         for sample in monitor.history {
             if let previous, sample.date.timeIntervalSince(previous.date) > Double(monitor.interval) / 1000 * 2.5 || previous.power(state.chartMetric) == nil {
                 segment += 1
             }
             if let power = sample.power(state.chartMetric) {
-                points.append(ChartPoint(id: sample.id, date: sample.date, power: power, segment: segment))
+                points.append(PowerTrendPlot.Point(date: sample.date, power: power, segment: segment))
             }
             previous = sample
         }

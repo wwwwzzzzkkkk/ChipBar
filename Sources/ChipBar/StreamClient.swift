@@ -30,12 +30,16 @@ final class StreamClient {
         DispatchQueue.global(qos: .utility).async { [self] in
             defer { stderrFinished.leave() }
             while true {
-                let data = errors.fileHandleForReading.availableData
-                if data.isEmpty { break }
-                lock.lock()
-                diagnostic.append(data)
-                if diagnostic.count > 4096 { diagnostic = Data(diagnostic.suffix(4096)) }
-                lock.unlock()
+                let hasData = autoreleasepool {
+                    let data = errors.fileHandleForReading.availableData
+                    guard !data.isEmpty else { return false }
+                    lock.lock()
+                    diagnostic.append(data)
+                    if diagnostic.count > 4096 { diagnostic = Data(diagnostic.suffix(4096)) }
+                    lock.unlock()
+                    return true
+                }
+                if !hasData { break }
             }
         }
         DispatchQueue.global(qos: .utility).async { [self] in
@@ -43,15 +47,22 @@ final class StreamClient {
             var parsingFailure: String?
             do {
                 while true {
-                    let data = output.fileHandleForReading.availableData
-                    if data.isEmpty { break }
-                    for line in try lines.append(data) {
-                        // Each sample is independently validated. Malformed output triggers recovery,
-                        // rather than preserving an apparently live old reading.
-                        onSample(try Sample.decode(line))
+                    // A dispatch work item lives for the entire sampling session.
+                    // Drain Foundation read/JSON temporaries per chunk, not at EOF.
+                    let hasData = try autoreleasepool {
+                        let data = output.fileHandleForReading.availableData
+                        guard !data.isEmpty else { return false }
+                        for line in try lines.append(data) {
+                            // Bound JSON temporaries even when a read contains many samples.
+                            try autoreleasepool { onSample(try Sample.decode(line)) }
+                        }
+                        return true
                     }
+                    if !hasData { break }
                 }
-                if let tail = lines.finish() { onSample(try Sample.decode(tail)) }
+                if let tail = lines.finish() {
+                    try autoreleasepool { onSample(try Sample.decode(tail)) }
+                }
             } catch {
                 parsingFailure = error.localizedDescription
                 if process.isRunning { process.terminate() }

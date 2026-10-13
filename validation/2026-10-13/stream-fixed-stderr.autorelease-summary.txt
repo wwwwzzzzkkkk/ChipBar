@@ -1,0 +1,32 @@
+Process:         probe [94385]
+Path:            /private/var/folders/*/probe
+Load Address:    0x104cd8000
+Identifier:      probe
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [94346]
+Target Type:     live task
+
+Date/Time:       2026-10-13 15:58:51.393 +0800
+Launch Time:     2026-10-13 15:58:43.886 +0800
+OS Version:      macOS 27.2 (26B5086k)
+Report Version:  7
+Analysis Tool:   /usr/bin/leaks
+
+Physical footprint:         2608K
+Physical footprint (peak):  2608K
+Idle exit:                  untracked
+----
+
+Entries held only by autorelease pools are marked with **
+
+                     Total entries in autoreleasepools:        14
+                    Unique entries in autoreleasepools:        14
+
+         Memory size of autoreleasepool content blocks:         3 blocks       12K bytes
+        Memory directly held only by autorelease pools:        10 blocks       736 bytes
+      Memory indirectly held only by autorelease pools:         9 blocks      2112 bytes
+                                                           ======           ======
+  Total memory of autorelease pools and content blocks:        22 blocks       15K bytes
+

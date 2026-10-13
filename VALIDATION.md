@@ -1,5 +1,11 @@
 # 本次验证记录
 
+## 2026-10-13 内存修复验证
+
+读取线程的对照测试、完整趋势区域隔离、正常速度核对及修复范围见 [MEMORY_FIX.md](MEMORY_FIX.md)。修复与菜单栏动画归入 1.0.5；Mac mini 尚未完成修复版 24–48 小时验证。
+
+## 2026-10-08 首次验证
+
 日期：2026-10-08（Asia/Singapore）。
 
 环境：Apple M1 Pro，MacBookPro18,3，arm64，macOS 27.2（26B5086k），Swift 6.4 Command Line Tools，macmon 0.9.0。

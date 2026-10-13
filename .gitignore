@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 dist/
+audit-results/
 .DS_Store
 __pycache__/
 *.pyc

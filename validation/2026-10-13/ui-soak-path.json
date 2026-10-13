@@ -1,0 +1,332 @@
+[
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30180360,
+    "historyCount" : 196,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 84443136,
+    "seconds" : 5
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30409736,
+    "historyCount" : 400,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 84770816,
+    "seconds" : 10
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30524424,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 84656128,
+    "seconds" : 15
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30311432,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 84688896,
+    "seconds" : 20
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30327816,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 84721664,
+    "seconds" : 25
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30688264,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85311488,
+    "seconds" : 30
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30983176,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85770240,
+    "seconds" : 35
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30950408,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85573632,
+    "seconds" : 40
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30950408,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85377024,
+    "seconds" : 45
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30950408,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85377024,
+    "seconds" : 50
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30950408,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85344256,
+    "seconds" : 55
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31360008,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 79478784,
+    "seconds" : 60
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31327240,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 79757312,
+    "seconds" : 65
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31327240,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 78430208,
+    "seconds" : 70
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31327240,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 78462976,
+    "seconds" : 75
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31310856,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 79167488,
+    "seconds" : 80
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31343624,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 78282752,
+    "seconds" : 85
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31376392,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 74121216,
+    "seconds" : 90
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31376392,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 73646080,
+    "seconds" : 95
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31343624,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 73891840,
+    "seconds" : 100
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31343624,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 74317824,
+    "seconds" : 105
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31343624,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 74121216,
+    "seconds" : 110
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31147016,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 74203136,
+    "seconds" : 115
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : false,
+    "footprintBytes" : 30458888,
+    "historyCount" : 600,
+    "panelVisible" : false,
+    "phase" : "closed",
+    "residentBytes" : 75563008,
+    "seconds" : 125
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : false,
+    "footprintBytes" : 30540808,
+    "historyCount" : 600,
+    "panelVisible" : false,
+    "phase" : "closed",
+    "residentBytes" : 75628544,
+    "seconds" : 130
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : false,
+    "footprintBytes" : 30508040,
+    "historyCount" : 600,
+    "panelVisible" : false,
+    "phase" : "closed",
+    "residentBytes" : 75628544,
+    "seconds" : 135
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : false,
+    "footprintBytes" : 30508040,
+    "historyCount" : 600,
+    "panelVisible" : false,
+    "phase" : "closed",
+    "residentBytes" : 75431936,
+    "seconds" : 140
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30688264,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 77398016,
+    "seconds" : 150
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31360008,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 79364096,
+    "seconds" : 155
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31310856,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 78938112,
+    "seconds" : 160
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31310856,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 78905344,
+    "seconds" : 170
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31327240,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 78987264,
+    "seconds" : 175
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 31523848,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 79904768,
+    "seconds" : 180
+  }
+]

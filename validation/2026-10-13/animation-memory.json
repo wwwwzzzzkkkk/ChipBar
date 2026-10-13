@@ -1,0 +1,62 @@
+[
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30606344,
+    "historyCount" : 198,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 84885504,
+    "seconds" : 5
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30737416,
+    "historyCount" : 408,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 85393408,
+    "seconds" : 10
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30934024,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "open",
+    "residentBytes" : 86114304,
+    "seconds" : 15
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : false,
+    "footprintBytes" : 30753800,
+    "historyCount" : 600,
+    "panelVisible" : false,
+    "phase" : "closed",
+    "residentBytes" : 85999616,
+    "seconds" : 20
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30163976,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 85508096,
+    "seconds" : 25
+  },
+  {
+    "connected" : true,
+    "dashboardMounted" : true,
+    "footprintBytes" : 30819336,
+    "historyCount" : 600,
+    "panelVisible" : true,
+    "phase" : "reopened",
+    "residentBytes" : 85934080,
+    "seconds" : 30
+  }
+]

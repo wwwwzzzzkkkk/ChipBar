@@ -1,6 +1,6 @@
 # ChipBar
 
-原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + Swift Charts；无需管理员权限。
+原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + 有界趋势绘图；无需管理员权限。
 
 本次实测与未验证范围见 [VALIDATION.md](VALIDATION.md)。
 
@@ -8,7 +8,7 @@
 
 macOS 26 及更新版本使用系统原生 `NSGlassEffectView`，提供 Liquid Glass 的透明、折射与边缘高光。旧版本 macOS 使用 `NSVisualEffectView` 系统磨砂材质。面板随明暗模式变化，并尊重系统“降低透明度”辅助功能设置。
 
-点击菜单栏打开悬浮面板；再次点击、点击其他位置或按 Esc 可关闭。图标、数据与图表保持上一版样式。
+点击菜单栏打开悬浮面板；再次点击、点击其他位置或按 Esc 可关闭。展开约 0.16 秒淡入，收起约 0.12 秒淡出，使用 AppKit 缓入缓出；连续点击可在动画中途反向切换。开启系统“减少动态效果”时直接切换。图标、数据与图表保持上一版样式。
 
 ## 应用图标
 
@@ -114,6 +114,19 @@ dist/ChipBar.app/Contents/MacOS/ChipBar --diagnose --macmon /path/to/macmon
 # 受控进程故障测试，无需管理员权限
 python3 scripts/integration.py
 
+# 加速读取内存检查：真实 StreamClient，使用夹具，无硬件采样
+python3 scripts/stream_soak.py --samples 20000 --output audit-results/stream-fixed.json
+# 对照旧版（只读 Git 源码，不切换工作区）
+python3 scripts/stream_soak.py --revision v1.0.4 --samples 20000 --output audit-results/stream-baseline.json
+# stderr 路径和 autorelease pool 检查
+python3 scripts/stream_soak.py --samples 3000 --stderr-bytes 4096 --inspect --output audit-results/stderr-fixed.json
+
+# 完整面板加速检查：三分钟内持续打开、关闭、重开；使用夹具
+# 会在当前桌面打开测试窗口；临时路径与间隔不会写入已保存设置
+python3 scripts/ui_soak.py --output audit-results/ui-soak-fixed.json
+# 旧系统材质、缺失采样断线与最终界面截图
+python3 scripts/ui_soak.py --seconds 60 --legacy-material --gaps --output audit-results/ui-soak-gaps.json
+
 # 使用真实数据渲染原生界面 PNG，约七秒后退出
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/preview.png
 # 验证实际菜单栏按钮和弹窗（需本机 macmon；约八秒后退出）
@@ -134,6 +147,8 @@ dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/settings.png -
 单元测试运行需要 macOS 14+ 与 Swift 6 的 Swift Testing；应用运行最低版本仍为 macOS 13。`test.sh` 会为只有 Command Line Tools 的环境补充测试框架和插件路径，并使用独立执行文件避开 File Provider 测试包签名问题。
 
 ## 版本管理与发版
+
+每次完成软件更新，同步 GitHub 源码、版本号、更新记录与 Release；交付前确认发布工作流成功，并确认安装包和 Homebrew Cask 已更新。相关约定见 [AGENTS.md](AGENTS.md)。
 
 版本号只在根目录 `VERSION` 中维护。构建自动写入应用的版本和构建编号，设置面板显示安装版本。`CHANGELOG.md` 记录每次更新；Release 和 Homebrew 记录各版本的文件校验值。
 
@@ -176,6 +191,7 @@ python3 scripts/version.py package
 - `Sources/ChipBar/StreamClient.swift`：进程与标准输出 / 错误读取。
 - `Sources/ChipBar/Monitor.swift`：状态、重试、过期检测、睡眠恢复与偏好设置。
 - `Sources/ChipBar/Dashboard.swift`：弹窗、趋势与设置。
+- `Sources/ChipBar/PowerTrendPlot.swift`：有界功率折线、坐标与孤立采样点显示。
 - `Sources/ChipBar/App.swift`：应用生命周期、诊断与原生渲染工具。
 - `Sources/ChipBar/MenuController.swift`：菜单栏功率文字、透明悬浮面板、外部点击关闭与小屏滚动，以及真实菜单栏 UI 检查。
 - `Sources/ChipBar/PanelMaterialView.swift`：原生 Liquid Glass 与旧系统磨砂材质适配。

@@ -1,0 +1,164 @@
+{
+  "revision": "v1.0.4",
+  "samples": 20000,
+  "spacing_ms": 1,
+  "stderr_bytes_per_sample": 0,
+  "fixture_bytes": 2264,
+  "exit_code": 0,
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2\nBuildVersion:\t\t26B5086k\n",
+  "records": [
+    {
+      "seconds": 0.0,
+      "rss_kib": 32
+    },
+    {
+      "seconds": 1.02,
+      "rss_kib": 15232
+    },
+    {
+      "seconds": 2.05,
+      "rss_kib": 28272
+    },
+    {
+      "seconds": 3.06,
+      "rss_kib": 41152
+    },
+    {
+      "seconds": 4.07,
+      "rss_kib": 53952
+    },
+    {
+      "seconds": 5.09,
+      "rss_kib": 67408
+    },
+    {
+      "seconds": 6.1,
+      "rss_kib": 80640
+    },
+    {
+      "seconds": 7.12,
+      "rss_kib": 93984
+    },
+    {
+      "seconds": 8.15,
+      "rss_kib": 107232
+    },
+    {
+      "seconds": 9.17,
+      "rss_kib": 119728
+    },
+    {
+      "seconds": 10.18,
+      "rss_kib": 114848
+    },
+    {
+      "seconds": 11.2,
+      "rss_kib": 103584
+    },
+    {
+      "seconds": 12.21,
+      "rss_kib": 57536
+    },
+    {
+      "seconds": 13.22,
+      "rss_kib": 50112
+    },
+    {
+      "seconds": 14.25,
+      "rss_kib": 48576
+    },
+    {
+      "seconds": 15.26,
+      "rss_kib": 57712
+    },
+    {
+      "seconds": 16.27,
+      "rss_kib": 53440
+    },
+    {
+      "seconds": 17.28,
+      "rss_kib": 65328
+    },
+    {
+      "seconds": 18.3,
+      "rss_kib": 63024
+    },
+    {
+      "seconds": 19.31,
+      "rss_kib": 65856
+    },
+    {
+      "seconds": 20.32,
+      "rss_kib": 76880
+    },
+    {
+      "seconds": 21.34,
+      "rss_kib": 87040
+    },
+    {
+      "seconds": 22.37,
+      "rss_kib": 85904
+    },
+    {
+      "seconds": 23.39,
+      "rss_kib": 90496
+    },
+    {
+      "seconds": 24.4,
+      "rss_kib": 53248
+    },
+    {
+      "seconds": 25.41,
+      "rss_kib": 55248
+    },
+    {
+      "seconds": 26.43,
+      "rss_kib": 51920
+    },
+    {
+      "seconds": 27.45,
+      "rss_kib": 62304
+    },
+    {
+      "seconds": 28.47,
+      "rss_kib": 55584
+    },
+    {
+      "seconds": 29.49,
+      "rss_kib": 40064
+    },
+    {
+      "seconds": 30.5,
+      "rss_kib": 47728
+    },
+    {
+      "seconds": 31.51,
+      "rss_kib": 55616
+    },
+    {
+      "seconds": 32.54,
+      "rss_kib": 58000
+    },
+    {
+      "seconds": 33.56,
+      "rss_kib": 59760
+    },
+    {
+      "seconds": 34.59,
+      "rss_kib": 50720
+    },
+    {
+      "seconds": 35.61,
+      "rss_kib": 40304
+    },
+    {
+      "seconds": 36.63,
+      "rss_kib": 33504
+    },
+    {
+      "seconds": 37.65,
+      "rss_kib": 22656
+    }
+  ],
+  "probe_log": "samples=1000 resident_bytes=28917760 footprint_bytes=24003016 compressed_bytes=0\nsamples=2000 resident_bytes=50397184 footprint_bytes=45498848 compressed_bytes=0\nsamples=3000 resident_bytes=71745536 footprint_bytes=66847200 compressed_bytes=0\nsamples=4000 resident_bytes=93241344 footprint_bytes=88375824 compressed_bytes=0\nsamples=5000 resident_bytes=114507776 footprint_bytes=109658664 compressed_bytes=0\nsamples=6000 resident_bytes=117882880 footprint_bytes=130843200 compressed_bytes=17793024\nsamples=7000 resident_bytes=66699264 footprint_bytes=152207936 compressed_bytes=90341376\nsamples=8000 resident_bytes=40878080 footprint_bytes=173589056 compressed_bytes=137543680\nsamples=9000 resident_bytes=58753024 footprint_bytes=194839128 compressed_bytes=140902400\nsamples=10000 resident_bytes=61358080 footprint_bytes=216056408 compressed_bytes=159514624\nsamples=11000 resident_bytes=65552384 footprint_bytes=237683312 compressed_bytes=176930816\nsamples=12000 resident_bytes=75988992 footprint_bytes=258982512 compressed_bytes=187793408\nsamples=13000 resident_bytes=89964544 footprint_bytes=280445576 compressed_bytes=195264512\nsamples=14000 resident_bytes=93339648 footprint_bytes=301941384 compressed_bytes=213385216\nsamples=15000 resident_bytes=56000512 footprint_bytes=323142304 compressed_bytes=271908864\nsamples=16000 resident_bytes=55820288 footprint_bytes=344392376 compressed_bytes=293322752\nsamples=17000 resident_bytes=71303168 footprint_bytes=365511376 compressed_bytes=298942464\nsamples=18000 resident_bytes=46989312 footprint_bytes=386564816 compressed_bytes=344309760\nsamples=19000 resident_bytes=57999360 footprint_bytes=407896808 compressed_bytes=354615296\nsamples=20000 resident_bytes=63930368 footprint_bytes=429228776 compressed_bytes=370016256\nbefore_stop resident_bytes=22216704 footprint_bytes=429245160 compressed_bytes=411746304\n"
+}

@@ -18,6 +18,9 @@ import Combine
     private let scrollView = NSScrollView()
     private let dashboardState = DashboardState()
     private var hostingView: NSHostingView<AnyView>!
+    private var dashboardMounted = false
+    private var panelRequestedVisible = false
+    private var panelTransition = UUID()
     private var panelMaterial: PanelMaterialView!
     private var subscription: AnyCancellable?
     private var measuredHeight: CGFloat = 0
@@ -39,7 +42,7 @@ import Combine
             button.target = self
             button.action = #selector(togglePanel)
         }
-        hostingView = NSHostingView<AnyView>(rootView: AnyView(Dashboard(monitor: monitor, state: dashboardState)))
+        hostingView = NSHostingView<AnyView>(rootView: AnyView(EmptyView()))
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
@@ -57,6 +60,7 @@ import Combine
         panel.isFloatingPanel = true
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = false
+        panel.animationBehavior = .none
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
         panel.title = "ChipBar"
         panel.delegate = self
@@ -96,8 +100,9 @@ import Combine
             MainActor.assumeIsolated { self?.menuTracking = false }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            let clickedStatusItem = MainActor.assumeIsolated { self?.isStatusItemClick ?? false }
             Task { @MainActor in
-                guard let self, !self.menuTracking, NSApplication.shared.modalWindow == nil else { return }
+                guard let self, !clickedStatusItem, !self.menuTracking, NSApplication.shared.modalWindow == nil else { return }
                 self.hidePanel()
             }
         })
@@ -109,7 +114,7 @@ import Combine
             button.toolTip = "ChipBar · \(monitor.hardware) · \(monitor.menuText)"
             button.setAccessibilityLabel("ChipBar \(monitor.menuMetric.title) \(monitor.menuText)")
         }
-        guard forceLayout || panel.isVisible || measuredHeight == 0 else { return }
+        guard dashboardMounted, forceLayout || panel.isVisible else { return }
         hostingView.layoutSubtreeIfNeeded()
         let height = ceil(hostingView.fittingSize.height)
         guard height.isFinite, height > 0 else { return }
@@ -144,20 +149,77 @@ import Combine
     }
 
     @objc private func togglePanel() {
-        if panel.isVisible { hidePanel(); return }
+        if panelRequestedVisible { hidePanel(); return }
         guard let (rect, screen) = anchor() else { return }
         maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
+        if !dashboardMounted {
+            hostingView.rootView = AnyView(Dashboard(monitor: monitor, state: dashboardState))
+            dashboardMounted = true
+        }
         refresh(forceLayout: true)
         positionPanel()
+        if !panel.isVisible { panel.alphaValue = 0 }
+        panelRequestedVisible = true
         NSApplication.shared.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.displayIfNeeded()
+        animatePanel(visible: true)
     }
 
-    private func hidePanel() { panel.orderOut(nil) }
+    private func hidePanel(animated: Bool = true) {
+        guard panelRequestedVisible else { return }
+        panelRequestedVisible = false
+        animatePanel(visible: false, animated: animated)
+    }
+
+    private func animatePanel(visible: Bool, animated: Bool = true) {
+        let token = UUID()
+        panelTransition = token
+        statusItem.button?.highlight(visible)
+        let complete: () -> Void = { [weak self] in
+            guard let self, self.panelTransition == token else { return }
+            if visible {
+                self.statusItem.button?.highlight(true)
+            } else {
+                self.panel.orderOut(nil)
+                self.removeDashboard()
+            }
+        }
+        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            panel.alphaValue = visible ? 1 : 0
+            complete()
+            return
+        }
+        // AppKit animates opacity on the existing window; reversing a transition
+        // keeps its current opacity. Old completions cannot hide a reopened panel.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = visible ? 0.16 : 0.12
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = visible ? 1 : 0
+        } completionHandler: {
+            Task { @MainActor in complete() }
+        }
+    }
+
+    private func removeDashboard() {
+        guard dashboardMounted else { return }
+        // Hidden NSPanel content still observes Monitor. Remove the dashboard so
+        // it cannot keep updating offscreen; settings live separately.
+        hostingView.rootView = AnyView(EmptyView())
+        dashboardMounted = false
+        measuredHeight = 0
+        lastSettingsVisible = false
+    }
 
     func windowDidResignKey(_ notification: Notification) {
-        if !menuTracking { hidePanel() }
+        if !menuTracking, !isStatusItemClick { hidePanel() }
+    }
+
+    private var isStatusItemClick: Bool {
+        guard let event = NSApplication.shared.currentEvent,
+              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp].contains(event.type),
+              let (rect, _) = anchor() else { return false }
+        return rect.contains(NSEvent.mouseLocation)
     }
 
     /// Exercise the actual status item and glass panel, using live metrics.
@@ -165,7 +227,7 @@ import Combine
         if CommandLine.arguments.contains("--light") { panel.appearance = NSAppearance(named: .aqua) }
         if CommandLine.arguments.contains("--dark") { panel.appearance = NSAppearance(named: .darkAqua) }
         guard monitor.connected else { failVerification("UI verification needs live macmon data.") }
-        togglePanel()
+        statusItem.button?.performClick(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
             do {
                 try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -202,25 +264,74 @@ import Combine
                               abs(scrollView.bounds.height - min(measuredHeight, maximumHeight)) < 1 else {
                             failVerification("Menu title or panel sizing verification failed.")
                         }
-                        hidePanel()
-                        guard !panel.isVisible else { failVerification("Panel dismissal failed.") }
-                        togglePanel()
-                        guard panel.isVisible else { failVerification("Panel reopening failed.") }
-                        panel.cancelOperation(nil)
-                        guard !panel.isVisible else { failVerification("Escape dismissal failed.") }
-                        togglePanel()
-                        if let event = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1) {
-                            NSApplication.shared.postEvent(event, atStart: true)
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [self] in
-                            guard !panel.isVisible else { failVerification("Outside click dismissal failed.") }
-                            monitor.stop(forQuit: true)
-                            NSApplication.shared.terminate(nil)
-                        }
+                        Task { @MainActor in await self.verifyPanelTransitions(directory: directory) }
                     } catch { failVerification(error.localizedDescription) }
                 }
             } catch { failVerification(error.localizedDescription) }
         }
+    }
+
+    private func verifyPanelTransitions(directory: String) async {
+        statusItem.button?.performClick(nil)
+        guard !panelRequestedVisible else { failVerification("Second status click did not request dismissal.") }
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        let closingAlpha = panel.alphaValue
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard !panel.isVisible, !dashboardMounted, panel.alphaValue == 0 else {
+            failVerification("Animated panel dismissal failed.")
+        }
+        statusItem.button?.performClick(nil)
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        let openingAlpha = panel.alphaValue
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard panel.isVisible, dashboardMounted, dashboardState.showSettings, panel.alphaValue == 1 else {
+            failVerification("Panel reopening or settings preservation failed.")
+        }
+        // Close, then reopen while fade-out is still in flight.
+        togglePanel()
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        togglePanel()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard panelRequestedVisible, panel.isVisible, dashboardMounted, panel.alphaValue == 1 else {
+            failVerification("Interrupted close hid a reopened panel.")
+        }
+        // Rapid reversals must end in the requested state, with one window.
+        for _ in 0..<10 {
+            togglePanel()
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard panelRequestedVisible, panel.isVisible, panel.alphaValue == 1 else {
+            failVerification("Rapid status toggles left the wrong panel state.")
+        }
+        panel.cancelOperation(nil)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard !panel.isVisible, !dashboardMounted else { failVerification("Escape dismissal failed.") }
+        togglePanel()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        if let event = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1) {
+            NSApplication.shared.postEvent(event, atStart: true)
+        }
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        guard !panel.isVisible, !dashboardMounted else { failVerification("Outside click dismissal failed.") }
+        togglePanel()
+        hidePanel(animated: false)
+        guard !panel.isVisible, !dashboardMounted else { failVerification("Immediate dismissal failed.") }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard !panel.isVisible, !dashboardMounted else { failVerification("Old animation undid immediate dismissal.") }
+        let result: [String: Any] = [
+            "openingAlphaAt60ms": openingAlpha,
+            "closingAlphaAt60ms": closingAlpha,
+            "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            "toggleAndDismissalChecksPassed": true,
+            "dashboardUnmountedAfterDismissal": !dashboardMounted
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: directory + "/transitions.json"))
+        } catch { failVerification(error.localizedDescription) }
+        monitor.stop(forQuit: true)
+        NSApplication.shared.terminate(nil)
     }
 
     private func failVerification(_ message: String) -> Never {

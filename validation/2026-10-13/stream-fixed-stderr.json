@@ -1,0 +1,128 @@
+{
+  "revision": "working-tree",
+  "samples": 3000,
+  "spacing_ms": 1,
+  "stderr_bytes_per_sample": 4096,
+  "fixture_bytes": 2264,
+  "exit_code": 0,
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.2\nBuildVersion:\t\t26B5086k\n",
+  "records": [
+    {
+      "seconds": 0.01,
+      "rss_kib": 32
+    },
+    {
+      "seconds": 1.02,
+      "rss_kib": 32
+    },
+    {
+      "seconds": 2.03,
+      "rss_kib": 7280
+    },
+    {
+      "seconds": 3.03,
+      "rss_kib": 7392
+    },
+    {
+      "seconds": 4.04,
+      "rss_kib": 6976
+    },
+    {
+      "seconds": 5.05,
+      "rss_kib": 6816
+    },
+    {
+      "seconds": 6.05,
+      "rss_kib": 6816
+    },
+    {
+      "seconds": 14.16,
+      "rss_kib": 6768
+    },
+    {
+      "seconds": 15.17,
+      "rss_kib": 6768
+    },
+    {
+      "seconds": 16.25,
+      "rss_kib": 6768
+    },
+    {
+      "seconds": 17.26,
+      "rss_kib": 6768
+    },
+    {
+      "seconds": 18.27,
+      "rss_kib": 6768
+    },
+    {
+      "seconds": 19.28,
+      "rss_kib": 5808
+    },
+    {
+      "seconds": 20.28,
+      "rss_kib": 5248
+    },
+    {
+      "seconds": 21.3,
+      "rss_kib": 5232
+    },
+    {
+      "seconds": 22.31,
+      "rss_kib": 5216
+    },
+    {
+      "seconds": 23.34,
+      "rss_kib": 5216
+    },
+    {
+      "seconds": 24.35,
+      "rss_kib": 5216
+    },
+    {
+      "seconds": 25.35,
+      "rss_kib": 5200
+    },
+    {
+      "seconds": 26.36,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 27.38,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 28.39,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 29.39,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 30.4,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 31.43,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 32.44,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 33.45,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 34.46,
+      "rss_kib": 5184
+    },
+    {
+      "seconds": 35.48,
+      "rss_kib": 5184
+    }
+  ],
+  "probe_log": "samples=1000 resident_bytes=7569408 footprint_bytes=2654664 compressed_bytes=0\nsamples=2000 resident_bytes=6979584 footprint_bytes=2671048 compressed_bytes=606208\nsamples=3000 resident_bytes=6979584 footprint_bytes=2671048 compressed_bytes=606208\nbefore_stop resident_bytes=5521408 footprint_bytes=2671048 compressed_bytes=2015232\n"
+}

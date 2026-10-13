@@ -1,0 +1,66 @@
+[
+  {
+    "file": "stream-baseline.json",
+    "sha256": "fea4bb5df341d41d5c836abd9caa67b7987f51ee063dbe56f364d5dbb04195af"
+  },
+  {
+    "file": "stream-fixed.json",
+    "sha256": "6c26dd60a30623bd20cb60207d6bbbf92381dbf762fd0588179c86add002949c"
+  },
+  {
+    "file": "stream-baseline-stderr.json",
+    "sha256": "80f8cca597d395db93a5464e1c36dc993064f60038f2690af7d7e6aa9e6cb320"
+  },
+  {
+    "file": "stream-fixed-stderr.json",
+    "sha256": "6c14b13a990390d3fb00e1e9d6a863cf0af6f90197c6bf898abe3642aeaee69c"
+  },
+  {
+    "file": "ui-soak-fixed.json",
+    "sha256": "928053a8f45650c8bc809d7430daa319cd1013e67015dab6e1684bd356840e66"
+  },
+  {
+    "file": "ui-soak-no-chart.json",
+    "sha256": "d74b3a0a33a9beaac39197455cf1907b70e1687f9d8cda6b2d937775a78aad71"
+  },
+  {
+    "file": "ui-soak-path.json",
+    "sha256": "89f68cbd7e087d15fb926babe7c1c22921b5bcef84392454d0d2384496080c06"
+  },
+  {
+    "file": "ui-soak-chart-1hz.json",
+    "sha256": "95a8f35001d52daa3e961cdc8c4c6c5f5f7916da470b5594f95fe421fffda4bb"
+  },
+  {
+    "file": "ui-soak-gaps.json",
+    "sha256": "2778c8e9b46876e69f5a3835fb44ff226c32674d9a119e185a2bd341a7ce64c9"
+  },
+  {
+    "file": "ui-soak-gaps.json.window.png",
+    "sha256": "5674c4d3ed87fb003d7757ce4fcf48c030c24021033f56d0ae747771f3285c0a"
+  },
+  {
+    "file": "animation-memory.json",
+    "sha256": "d096e0a7acca6ba7596b26c4b3b4a494df7c1d709f1a7f08922c9a697859409c"
+  },
+  {
+    "file": "animation-native-final/transitions.json",
+    "sha256": "0aa84620b27ec4bbdef2aa72a66c0f7eb3ef512f7e72e660f7bbcda024650e4d"
+  },
+  {
+    "file": "animation-legacy-final/transitions.json",
+    "sha256": "c59733e4d02e872013a50f2e8f872c089e27270c32b74ece718e70a76e62541e"
+  },
+  {
+    "file": "stream-baseline-stderr.autorelease-summary.txt",
+    "excerpt_lines": "1-32",
+    "original_file": "stream-baseline-stderr.autorelease.txt",
+    "original_sha256": "8aefa4ee91454ac97d5696ba9b53a40886416227a2c4b91c39bd75a24186c53d"
+  },
+  {
+    "file": "stream-fixed-stderr.autorelease-summary.txt",
+    "excerpt_lines": "1-32",
+    "original_file": "stream-fixed-stderr.autorelease.txt",
+    "original_sha256": "053ed1a1e3098b38ecb2ddcf5f0734469f37c80d626009c7924cd524a8a2b084"
+  }
+]
