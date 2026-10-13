@@ -134,6 +134,10 @@ dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/menu-qa
 # 真实鼠标事件检查；测试时仅运行一份 ChipBar，需要已有的事件投递权限
 # 移动鼠标到图标并点击四次，完成后恢复鼠标位置并退出
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-mouse-qa /absolute/path/menu-mouse-qa
+# 独立进程执行点按，避免应用主线程延长按键保持时间
+# 桌面须保持解锁；不要并发运行多份 ChipBar 或其他 GUI 检查
+swiftc scripts/status_click_driver.swift -o /tmp/chipbar-status-click-driver
+dist/ChipBar.app/Contents/MacOS/ChipBar --menu-mouse-qa /absolute/path/menu-stress --mouse-driver /tmp/chipbar-status-click-driver --mouse-press-ms 30 --mouse-click-count 4
 # 明暗模式、旧系统材质验证
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/light --light
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/legacy --legacy-material

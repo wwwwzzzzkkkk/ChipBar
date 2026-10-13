@@ -1,0 +1,22 @@
+[
+  {
+    "file": "normal-clicks.json",
+    "sha256": "9586eb22d984e36816c8de66e33ec1267f1ae03c98fb25b2775fb3a03bfa1457"
+  },
+  {
+    "file": "short-clicks.json",
+    "sha256": "83e421f8bc94ac044f26828d332803d27e1408bf00236e186873a273b35f86b8"
+  },
+  {
+    "file": "persistent-20-clicks.json",
+    "sha256": "d4ad447f45374a5526bc42b1db839416f07f191daf9b3aeeaa9641393f399a9d"
+  },
+  {
+    "file": "native-transitions.json",
+    "sha256": "748e7a478cd90654761573ccc66d85ae410b311a349ce9cf4f75a9d2e651163c"
+  },
+  {
+    "file": "legacy-transitions.json",
+    "sha256": "e0e7af085084c7278dbf8b3743568579df4989eae2ff8acd628c1c6f40cb1ef0"
+  }
+]

@@ -1,0 +1,26 @@
+{
+  "driver" : "single external process",
+  "pressMilliseconds" : 100,
+  "visibleAfterClicks" : [
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false,
+    true,
+    false
+  ]
+}

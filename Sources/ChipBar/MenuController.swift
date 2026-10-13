@@ -21,6 +21,11 @@ import Combine
     private var dashboardMounted = false
     private var panelRequestedVisible = false
     private var panelTransition = UUID()
+    private var autoDismissal: Task<Void, Never>?
+    private var mouseDownTarget: Bool?
+    private var mouseSequence = UUID()
+    private var mouseSequenceStartedAt: TimeInterval = 0
+    private var mouseReleaseCleanup: Task<Void, Never>?
     private var panelMaterial: PanelMaterialView!
     private var subscription: AnyCancellable?
     private var measuredHeight: CGFloat = 0
@@ -75,28 +80,43 @@ import Combine
 
     private func installDismissalHandlers() {
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        globalEvents = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] event in
-            let clickedStatusItem = MainActor.assumeIsolated {
-                self?.recordMouseQA("globalMouseDown", event: event)
-                return self?.pointerOverStatusItem ?? false
+        let releases: NSEvent.EventTypeMask = [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+        globalEvents = NSEvent.addGlobalMonitorForEvents(matching: [clicks, releases]) { [weak self] event in
+            let fromMenuBarOrRelease = MainActor.assumeIsolated {
+                self?.recordMouseQA("globalMouseEvent", event: event)
+                if [.leftMouseUp, .rightMouseUp, .otherMouseUp].contains(event.type) {
+                    self?.finishUnclaimedMousePress(event)
+                    return true
+                }
+                return self?.isMenuBarEvent(event) ?? false
             }
             // WindowServer hosts the menu bar and can deliver this same click
             // globally before forwarding it to our NSStatusBarButton.
-            guard !clickedStatusItem else { return }
-            Task { @MainActor in
-                guard let self, !self.menuTracking else { return }
-                self.hidePanel()
-            }
+            guard !fromMenuBarOrRelease else { return }
+            MainActor.assumeIsolated { self?.dismissForFocusLoss() }
         }
-        localEvents = NSEvent.addLocalMonitorForEvents(matching: [clicks, .keyDown]) { [weak self] event in
+        localEvents = NSEvent.addLocalMonitorForEvents(matching: [clicks, releases, .keyDown]) { [weak self] event in
             self?.recordMouseQA("localEvent", event: event)
+            if [.leftMouseUp, .rightMouseUp, .otherMouseUp].contains(event.type) {
+                self?.finishUnclaimedMousePress(event)
+                return event
+            }
+            if event.type != .keyDown, self?.isStatusButtonEvent(event) == true {
+                self?.autoDismissal?.cancel()
+                self?.autoDismissal = nil
+                self?.mouseReleaseCleanup?.cancel()
+                self?.mouseSequence = UUID()
+                self?.mouseSequenceStartedAt = event.timestamp
+                self?.mouseDownTarget = !(self?.panelRequestedVisible ?? false)
+                return event
+            }
             guard let self, self.panel.isVisible else { return event }
             if event.type == .keyDown, event.keyCode == 53, !self.menuTracking {
                 self.hidePanel()
                 return nil
             }
             if event.type != .keyDown, !self.menuTracking, NSApplication.shared.modalWindow == nil,
-               event.window !== self.panel, event.window !== self.statusItem.button?.window {
+               event.window !== self.panel, !self.isStatusButtonEvent(event) {
                 self.hidePanel()
             }
             return event
@@ -109,11 +129,9 @@ import Combine
             MainActor.assumeIsolated { self?.menuTracking = false }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.recordMouseQA("applicationResignedActive") }
-            let clickedStatusItem = MainActor.assumeIsolated { self?.isStatusItemClick ?? false }
-            Task { @MainActor in
-                guard let self, !clickedStatusItem, !self.menuTracking, NSApplication.shared.modalWindow == nil else { return }
-                self.hidePanel()
+            MainActor.assumeIsolated {
+                self?.recordMouseQA("applicationResignedActive")
+                self?.dismissForFocusLoss()
             }
         })
     }
@@ -160,7 +178,11 @@ import Combine
 
     @objc private func togglePanel() {
         recordMouseQA("buttonAction")
-        if panelRequestedVisible { hidePanel(); return }
+        let shouldOpen = mouseDownTarget ?? !panelRequestedVisible
+        mouseDownTarget = nil
+        mouseReleaseCleanup?.cancel(); mouseReleaseCleanup = nil
+        autoDismissal?.cancel(); autoDismissal = nil
+        if !shouldOpen { hidePanel(); return }
         guard let (rect, screen) = anchor() else { return }
         maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
         if !dashboardMounted {
@@ -178,6 +200,9 @@ import Combine
     }
 
     private func hidePanel(animated: Bool = true) {
+        autoDismissal?.cancel(); autoDismissal = nil
+        mouseDownTarget = nil
+        mouseReleaseCleanup?.cancel(); mouseReleaseCleanup = nil
         guard panelRequestedVisible else { return }
         panelRequestedVisible = false
         animatePanel(visible: false, animated: animated)
@@ -224,17 +249,49 @@ import Combine
 
     func windowDidResignKey(_ notification: Notification) {
         recordMouseQA("panelResignedKey")
-        if !menuTracking, !isStatusItemClick { hidePanel() }
+        dismissForFocusLoss()
     }
 
-    private var isStatusItemClick: Bool {
-        guard pointerOverStatusItem else { return false }
-        // On real menu-bar clicks, key/active loss arrives with an
-        // applicationDefined currentEvent, before the button's mouse event.
-        if NSEvent.pressedMouseButtons != 0 { return true }
-        guard let event = NSApplication.shared.currentEvent,
-              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp].contains(event.type) else { return false }
-        return abs(ProcessInfo.processInfo.systemUptime - event.timestamp) < 0.25
+    private func dismissForFocusLoss() {
+        guard panelRequestedVisible, mouseDownTarget == nil else { return }
+        autoDismissal?.cancel()
+        let transition = panelTransition
+        // Let WindowServer finish forwarding a status-button press. Native mouse
+        // down freezes its toggle target and cancels this speculative dismissal.
+        autoDismissal = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
+            guard let self, self.panelTransition == transition, !self.menuTracking, self.mouseDownTarget == nil,
+                  NSApplication.shared.modalWindow == nil else { return }
+            self.hidePanel()
+        }
+    }
+
+    private func isMenuBarEvent(_ event: NSEvent) -> Bool {
+        // The hosted menu-bar window is separate from the button's virtual
+        // NSWindow. Its layer is stable even when live cursor/frame values lag.
+        if event.windowNumber > 0, event.windowNumber <= Int(UInt32.max),
+           let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(event.windowNumber)) as? [[String: Any]],
+           windows.contains(where: { ($0[kCGWindowLayer as String] as? Int) == NSWindow.Level.mainMenu.rawValue }) {
+            return true
+        }
+        return isStatusButtonEvent(event)
+    }
+
+    private func isStatusButtonEvent(_ event: NSEvent) -> Bool {
+        guard let window = statusItem.button?.window else { return false }
+        return event.window === window || event.windowNumber > 0 && event.windowNumber == window.windowNumber
+    }
+
+    private func finishUnclaimedMousePress(_ event: NSEvent) {
+        guard mouseDownTarget != nil, event.timestamp >= mouseSequenceStartedAt else { return }
+        mouseReleaseCleanup?.cancel()
+        let sequence = mouseSequence
+        mouseReleaseCleanup = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
+            guard let self, self.mouseSequence == sequence, self.mouseDownTarget != nil else { return }
+            self.mouseDownTarget = nil
+            if !self.panel.isKeyWindow { self.dismissForFocusLoss() }
+        }
     }
 
     private var pointerOverStatusItem: Bool {
@@ -257,6 +314,9 @@ import Combine
     /// Send mouse down/up through WindowServer rather than invoking a button action.
     func verifyMouseClicks(directory: String) async {
         guard CGPreflightPostEventAccess() else { failVerification("Mouse QA needs existing event-posting permission.") }
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.loginwindow" else {
+            failVerification("Mouse QA requires an unlocked desktop.")
+        }
         hidePanel(animated: false)
         try? await Task.sleep(nanoseconds: 300_000_000)
         guard !panelRequestedVisible, !panel.isVisible else { failVerification("Mouse QA could not reset the panel.") }
@@ -265,7 +325,17 @@ import Combine
         defer { if let originalPosition { CGWarpMouseCursorPosition(originalPosition) } }
         var states: [Bool] = []
         var visibility: [Bool] = []
-        for _ in 0..<4 {
+        let args = CommandLine.arguments
+        let pressIndex = args.firstIndex(of: "--mouse-press-ms")
+        let pressMilliseconds = pressIndex.flatMap { args.count > $0 + 1 ? Int(args[$0 + 1]) : nil } ?? 100
+        let driverIndex = args.firstIndex(of: "--mouse-driver")
+        let driverPath = driverIndex.flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
+        let busyUI = args.contains("--busy-ui")
+        let countIndex = args.firstIndex(of: "--mouse-click-count")
+        let clickCount = countIndex.flatMap { args.count > $0 + 1 ? Int(args[$0 + 1]) : nil } ?? 4
+        guard (0...1000).contains(pressMilliseconds) else { failVerification("Mouse press must be 0–1000 milliseconds.") }
+        guard (1...100).contains(clickCount) else { failVerification("Mouse click count must be 1–100.") }
+        for _ in 0..<clickCount {
             guard let (rect, _) = anchor(), let top = NSScreen.screens.first?.frame.maxY else {
                 failVerification("Cannot locate status item for mouse QA.")
             }
@@ -290,28 +360,42 @@ import Combine
                     }
                 }
             }
-            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left)?.post(tap: .cghidEventTap)
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: position, mouseButton: .left)
-            down?.setIntegerValueField(.mouseEventClickState, value: 1)
-            down?.post(tap: .cghidEventTap)
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: position, mouseButton: .left)
-            up?.setIntegerValueField(.mouseEventClickState, value: 1)
-            up?.post(tap: .cghidEventTap)
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            if let driverPath {
+                let driver = Process()
+                driver.executableURL = URL(fileURLWithPath: driverPath)
+                driver.arguments = [String(Double(position.x)), String(Double(position.y)), String(pressMilliseconds)]
+                do { try driver.run() } catch { failVerification(error.localizedDescription) }
+                // Only QA stalls the UI to exercise delivery after mouse release.
+                if busyUI { usleep(useconds_t(700_000 + pressMilliseconds * 1000)) }
+                while driver.isRunning { try? await Task.sleep(nanoseconds: 20_000_000) }
+                guard driver.terminationStatus == 0 else { failVerification("External mouse driver failed.") }
+                try? await Task.sleep(nanoseconds: 450_000_000)
+            } else {
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left)?.post(tap: .cghidEventTap)
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: position, mouseButton: .left)
+                down?.setIntegerValueField(.mouseEventClickState, value: 1)
+                down?.post(tap: .cghidEventTap)
+                if pressMilliseconds > 0 { try? await Task.sleep(nanoseconds: UInt64(pressMilliseconds) * 1_000_000) }
+                let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: position, mouseButton: .left)
+                up?.setIntegerValueField(.mouseEventClickState, value: 1)
+                up?.post(tap: .cghidEventTap)
+                try? await Task.sleep(nanoseconds: 450_000_000)
+            }
             states.append(panelRequestedVisible)
             visibility.append(panel.isVisible)
             recordMouseQA("clickCompleted")
         }
-        let result: [String: Any] = ["statesAfterClicks": states, "visibleAfterClicks": visibility, "trace": mouseQATrace ?? []]
+        let result: [String: Any] = ["pressMilliseconds": pressMilliseconds, "externalDriver": driverPath != nil, "busyUI": busyUI,
+            "statesAfterClicks": states, "visibleAfterClicks": visibility, "trace": mouseQATrace ?? []]
         do {
             try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
             let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: directory + "/mouse-clicks.json"))
         } catch { failVerification(error.localizedDescription) }
         if let originalPosition { CGWarpMouseCursorPosition(originalPosition) }
-        guard states == [true, false, true, false], visibility == states else {
+        let expected = (0..<clickCount).map { $0.isMultiple(of: 2) }
+        guard states == expected, visibility == states else {
             failVerification("Actual mouse clicks did not alternate open/closed: \(states)")
         }
         monitor.stop(forQuit: true)
