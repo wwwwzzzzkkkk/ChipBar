@@ -11,6 +11,11 @@ import ChipBarCore
         let controller = MenuController(monitor: monitor)
         menuController = controller
         let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--menu-mouse-qa"), args.count > index + 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                Task { @MainActor in await controller.verifyMouseClicks(directory: args[index + 1]) }
+            }
+        }
         if let index = args.firstIndex(of: "--menu-qa"), args.count > index + 1 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                 controller.verifyUI(directory: args[index + 1])

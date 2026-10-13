@@ -1,0 +1,18 @@
+[
+  {
+    "file": "before-1.0.5.json",
+    "sha256": "9b7dba4b9b4b75fa8c5fe604a7713f144b94bea32ef3a2673c70abc060f35fca"
+  },
+  {
+    "file": "after-1.0.6.json",
+    "sha256": "4136ab9ff54b610984858d7dc28ad44929d8631a504dd7b430a762c264548f18"
+  },
+  {
+    "file": "native-transitions.json",
+    "sha256": "71915460cf8f3bedb8825b038df95119f471059e5ec482cc22ea77f175e589e3"
+  },
+  {
+    "file": "legacy-transitions.json",
+    "sha256": "9ac97b852abdd33610b0786c2a263b0b0ceffcd076517a98f860fdda9881e903"
+  }
+]

@@ -1,0 +1,236 @@
+{
+  "statesAfterClicks" : [
+    true,
+    false,
+    true,
+    false
+  ],
+  "trace" : [
+    {
+      "event" : "globalMouseDown",
+      "eventType" : 1,
+      "eventWindow" : 14015,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279120.37294583337
+    },
+    {
+      "event" : "localEvent",
+      "eventType" : 1,
+      "eventWindow" : 4294967296,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279120.40122295835
+    },
+    {
+      "event" : "buttonAction",
+      "eventType" : 2,
+      "eventWindow" : 4294967296,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279120.40174729167
+    },
+    {
+      "event" : "clickCompleted",
+      "eventType" : 13,
+      "eventWindow" : 22564,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 0,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279121.00106025004
+    },
+    {
+      "event" : "panelResignedKey",
+      "eventType" : 13,
+      "eventWindow" : 0,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279121.0670715
+    },
+    {
+      "event" : "applicationResignedActive",
+      "eventType" : 13,
+      "eventWindow" : 0,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279121.06716558337
+    },
+    {
+      "event" : "globalMouseDown",
+      "eventType" : 1,
+      "eventWindow" : 14015,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279121.06727283337
+    },
+    {
+      "event" : "localEvent",
+      "eventType" : 1,
+      "eventWindow" : 4294967296,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279121.08797912503
+    },
+    {
+      "event" : "buttonAction",
+      "eventType" : 2,
+      "eventWindow" : 4294967296,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279121.08822995838
+    },
+    {
+      "event" : "clickCompleted",
+      "eventType" : 5,
+      "eventWindow" : 22349,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : false,
+      "pressedMouseButtons" : 0,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279121.62484733335
+    },
+    {
+      "event" : "globalMouseDown",
+      "eventType" : 1,
+      "eventWindow" : 14015,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279121.68565775
+    },
+    {
+      "event" : "localEvent",
+      "eventType" : 1,
+      "eventWindow" : 4294967296,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279121.71299041668
+    },
+    {
+      "event" : "buttonAction",
+      "eventType" : 2,
+      "eventWindow" : 4294967296,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279121.71357750002
+    },
+    {
+      "event" : "clickCompleted",
+      "eventType" : 5,
+      "eventWindow" : 14015,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : false,
+      "pressedMouseButtons" : 0,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279122.26547312504
+    },
+    {
+      "event" : "panelResignedKey",
+      "eventType" : 13,
+      "eventWindow" : 0,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279122.33564079169
+    },
+    {
+      "event" : "applicationResignedActive",
+      "eventType" : 13,
+      "eventWindow" : 0,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279122.33572004171
+    },
+    {
+      "event" : "globalMouseDown",
+      "eventType" : 1,
+      "eventWindow" : 14015,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279122.33581333334
+    },
+    {
+      "event" : "localEvent",
+      "eventType" : 1,
+      "eventWindow" : 4294967296,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279122.36653808336
+    },
+    {
+      "event" : "buttonAction",
+      "eventType" : 2,
+      "eventWindow" : 4294967296,
+      "panelVisible" : true,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 1,
+      "requestedVisible" : true,
+      "statusWindow" : 4294967296,
+      "time" : 279122.366808875
+    },
+    {
+      "event" : "clickCompleted",
+      "eventType" : 2,
+      "eventWindow" : 4294967296,
+      "panelVisible" : false,
+      "pointerOverStatusItem" : true,
+      "pressedMouseButtons" : 0,
+      "requestedVisible" : false,
+      "statusWindow" : 4294967296,
+      "time" : 279122.88724366669
+    }
+  ],
+  "visibleAfterClicks" : [
+    true,
+    false,
+    true,
+    false
+  ]
+}

@@ -131,6 +131,9 @@ python3 scripts/ui_soak.py --seconds 60 --legacy-material --gaps --output audit-
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/preview.png
 # 验证实际菜单栏按钮和弹窗（需本机 macmon；约八秒后退出）
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/menu-qa
+# 真实鼠标事件检查；测试时仅运行一份 ChipBar，需要已有的事件投递权限
+# 移动鼠标到图标并点击四次，完成后恢复鼠标位置并退出
+dist/ChipBar.app/Contents/MacOS/ChipBar --menu-mouse-qa /absolute/path/menu-mouse-qa
 # 明暗模式、旧系统材质验证
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/light --light
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/legacy --legacy-material

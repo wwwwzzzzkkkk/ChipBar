@@ -1,0 +1,7 @@
+{
+  "closingAlphaAt60ms" : 0.33772742748260498,
+  "dashboardUnmountedAfterDismissal" : true,
+  "openingAlphaAt60ms" : 0.67373079061508179,
+  "reduceMotion" : false,
+  "toggleAndDismissalChecksPassed" : true
+}

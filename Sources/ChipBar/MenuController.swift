@@ -30,6 +30,7 @@ import Combine
     private var localEvents: Any?
     private var globalEvents: Any?
     private var observers: [NSObjectProtocol] = []
+    private var mouseQATrace: [[String: Any]]?
 
     init(monitor: Monitor) {
         self.monitor = monitor
@@ -74,13 +75,21 @@ import Combine
 
     private func installDismissalHandlers() {
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        globalEvents = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+        globalEvents = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] event in
+            let clickedStatusItem = MainActor.assumeIsolated {
+                self?.recordMouseQA("globalMouseDown", event: event)
+                return self?.pointerOverStatusItem ?? false
+            }
+            // WindowServer hosts the menu bar and can deliver this same click
+            // globally before forwarding it to our NSStatusBarButton.
+            guard !clickedStatusItem else { return }
             Task { @MainActor in
                 guard let self, !self.menuTracking else { return }
                 self.hidePanel()
             }
         }
         localEvents = NSEvent.addLocalMonitorForEvents(matching: [clicks, .keyDown]) { [weak self] event in
+            self?.recordMouseQA("localEvent", event: event)
             guard let self, self.panel.isVisible else { return event }
             if event.type == .keyDown, event.keyCode == 53, !self.menuTracking {
                 self.hidePanel()
@@ -100,6 +109,7 @@ import Combine
             MainActor.assumeIsolated { self?.menuTracking = false }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.recordMouseQA("applicationResignedActive") }
             let clickedStatusItem = MainActor.assumeIsolated { self?.isStatusItemClick ?? false }
             Task { @MainActor in
                 guard let self, !clickedStatusItem, !self.menuTracking, NSApplication.shared.modalWindow == nil else { return }
@@ -149,6 +159,7 @@ import Combine
     }
 
     @objc private func togglePanel() {
+        recordMouseQA("buttonAction")
         if panelRequestedVisible { hidePanel(); return }
         guard let (rect, screen) = anchor() else { return }
         maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
@@ -212,14 +223,99 @@ import Combine
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        recordMouseQA("panelResignedKey")
         if !menuTracking, !isStatusItemClick { hidePanel() }
     }
 
     private var isStatusItemClick: Bool {
+        guard pointerOverStatusItem else { return false }
+        // On real menu-bar clicks, key/active loss arrives with an
+        // applicationDefined currentEvent, before the button's mouse event.
+        if NSEvent.pressedMouseButtons != 0 { return true }
         guard let event = NSApplication.shared.currentEvent,
-              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp].contains(event.type),
-              let (rect, _) = anchor() else { return false }
-        return rect.contains(NSEvent.mouseLocation)
+              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp].contains(event.type) else { return false }
+        return abs(ProcessInfo.processInfo.systemUptime - event.timestamp) < 0.25
+    }
+
+    private var pointerOverStatusItem: Bool {
+        anchor()?.0.contains(NSEvent.mouseLocation) ?? false
+    }
+
+    private func recordMouseQA(_ name: String, event: NSEvent? = nil) {
+        guard mouseQATrace != nil else { return }
+        let event = event ?? NSApplication.shared.currentEvent
+        mouseQATrace?.append([
+            "event": name, "time": ProcessInfo.processInfo.systemUptime,
+            "eventType": event?.type.rawValue ?? 0, "eventWindow": event?.windowNumber ?? 0,
+            "statusWindow": statusItem.button?.window?.windowNumber ?? 0,
+            "pressedMouseButtons": NSEvent.pressedMouseButtons,
+            "requestedVisible": panelRequestedVisible, "panelVisible": panel.isVisible,
+            "pointerOverStatusItem": anchor()?.0.contains(NSEvent.mouseLocation) ?? false
+        ])
+    }
+
+    /// Send mouse down/up through WindowServer rather than invoking a button action.
+    func verifyMouseClicks(directory: String) async {
+        guard CGPreflightPostEventAccess() else { failVerification("Mouse QA needs existing event-posting permission.") }
+        hidePanel(animated: false)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard !panelRequestedVisible, !panel.isVisible else { failVerification("Mouse QA could not reset the panel.") }
+        mouseQATrace = []
+        let originalPosition = CGEvent(source: nil)?.location
+        defer { if let originalPosition { CGWarpMouseCursorPosition(originalPosition) } }
+        var states: [Bool] = []
+        var visibility: [Bool] = []
+        for _ in 0..<4 {
+            guard let (rect, _) = anchor(), let top = NSScreen.screens.first?.frame.maxY else {
+                failVerification("Cannot locate status item for mouse QA.")
+            }
+            var position = CGPoint(x: rect.midX, y: top - rect.midY)
+            let application = AXUIElementCreateApplication(getpid())
+            var extras: CFTypeRef?
+            if AXUIElementCopyAttributeValue(application, "AXExtrasMenuBar" as CFString, &extras) == .success,
+               let extras, CFGetTypeID(extras) == AXUIElementGetTypeID() {
+                var children: CFTypeRef?
+                AXUIElementCopyAttributeValue(unsafeBitCast(extras, to: AXUIElement.self), "AXChildren" as CFString, &children)
+                if let item = (children as? [AXUIElement])?.first {
+                    var origin: CFTypeRef?
+                    var size: CFTypeRef?
+                    AXUIElementCopyAttributeValue(item, "AXPosition" as CFString, &origin)
+                    AXUIElementCopyAttributeValue(item, "AXSize" as CFString, &size)
+                    if let origin, let size {
+                        var point = CGPoint.zero
+                        var dimensions = CGSize.zero
+                        AXValueGetValue(unsafeBitCast(origin, to: AXValue.self), .cgPoint, &point)
+                        AXValueGetValue(unsafeBitCast(size, to: AXValue.self), .cgSize, &dimensions)
+                        position = CGPoint(x: point.x + dimensions.width / 2, y: point.y + dimensions.height / 2)
+                    }
+                }
+            }
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left)?.post(tap: .cghidEventTap)
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: position, mouseButton: .left)
+            down?.setIntegerValueField(.mouseEventClickState, value: 1)
+            down?.post(tap: .cghidEventTap)
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: position, mouseButton: .left)
+            up?.setIntegerValueField(.mouseEventClickState, value: 1)
+            up?.post(tap: .cghidEventTap)
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            states.append(panelRequestedVisible)
+            visibility.append(panel.isVisible)
+            recordMouseQA("clickCompleted")
+        }
+        let result: [String: Any] = ["statesAfterClicks": states, "visibleAfterClicks": visibility, "trace": mouseQATrace ?? []]
+        do {
+            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: directory + "/mouse-clicks.json"))
+        } catch { failVerification(error.localizedDescription) }
+        if let originalPosition { CGWarpMouseCursorPosition(originalPosition) }
+        guard states == [true, false, true, false], visibility == states else {
+            failVerification("Actual mouse clicks did not alternate open/closed: \(states)")
+        }
+        monitor.stop(forQuit: true)
+        NSApplication.shared.terminate(nil)
     }
 
     /// Exercise the actual status item and glass panel, using live metrics.
