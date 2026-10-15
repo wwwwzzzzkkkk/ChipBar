@@ -23,7 +23,7 @@ public struct ExternalSSDProbe {
     public typealias Run = (String, [String]) throws -> CommandOutput
 
     /// Rediscover external physical whole disks every round; never persist a disk number.
-    public static func read(path: String, type: SMARTDeviceType, useSudo: Bool, run: Run) throws -> SSDProbeResult {
+    public static func read(path: String?, type: SMARTDeviceType, useSudo: Bool, run: Run) throws -> SSDProbeResult {
         let listing = try run("/usr/sbin/diskutil", ["list", "-plist", "external", "physical"])
         guard listing.status == 0 else { throw SSDReadError.invalidDevice }
         let ids = try ExternalDisk.identifiers(from: listing.data)
@@ -34,6 +34,10 @@ public struct ExternalSSDProbe {
                 guard info.status == 0 else { throw SSDReadError.invalidDevice }
                 let disk = try ExternalDisk.decodeInfo(info.data, expectedID: id)
                 do {
+                    guard let path else {
+                        readings.append(SSDReading(id: id, name: disk.name, error: "未安装 smartctl，温度不可用；空间与读写速度仍可查看。"))
+                        continue
+                    }
                     let args = disk.smartArguments(type: type)
                     let output = try run(useSudo ? "/usr/bin/sudo" : path, useSudo ? ["-n", "--", path] + args : args)
                     let diagnostic = output.diagnostic.lowercased()

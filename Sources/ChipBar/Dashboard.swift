@@ -10,6 +10,9 @@ final class DashboardState: ObservableObject {
     @Published var showSettings = false
     @Published var showApplications = CommandLine.arguments.contains("--apps")
     @Published var applicationsExpansion = CommandLine.arguments.contains("--apps") ? 1.0 : 0.0
+    @Published var showSSDDetails = CommandLine.arguments.contains("--ssd-details")
+    @Published var ssdExpansion = CommandLine.arguments.contains("--ssd-details") ? 1.0 : 0.0
+    @Published var ssdDetailsHeight: CGFloat = 0
     @Published var settingsExpansion = 0.0
     @Published var settingsHeight: CGFloat = 0
     @Published var applicationMetric: ApplicationResource = CommandLine.arguments.contains("--apps-gpu") ? .gpu : CommandLine.arguments.contains("--apps-ane") ? .ane : .cpu
@@ -41,7 +44,7 @@ struct Dashboard: View {
             ApplicationUsageSection(monitor: monitor, state: state)
             trend
             temperatures
-            SSDSection(ssd: monitor.ssd)
+            SSDSection(ssd: monitor.ssd, state: state)
             errorPanel
             Text(monitor.status).font(.caption).foregroundStyle(.secondary)
             VStack(spacing: 0) {

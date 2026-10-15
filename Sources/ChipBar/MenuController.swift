@@ -80,10 +80,11 @@ import Combine
         installDismissalHandlers()
         refresh()
         subscription = Publishers.Merge(monitor.objectWillChange.map { _ in () },
-                                       dashboardState.$settingsHeight.dropFirst().map { _ in () })
+                                       Publishers.Merge(dashboardState.$settingsHeight.dropFirst().map { _ in () },
+                                                        dashboardState.$ssdDetailsHeight.dropFirst().map { _ in () }))
             .debounce(for: .milliseconds(30), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.refresh() }
-        disclosureSubscription = dashboardState.$showApplications.combineLatest(dashboardState.$showSettings)
+        disclosureSubscription = dashboardState.$showApplications.combineLatest(dashboardState.$showSettings, dashboardState.$showSSDDetails)
             .dropFirst().receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.animateDisclosure() }
     }
@@ -93,9 +94,11 @@ import Combine
         disclosureAnimation = nil
         let applications = dashboardState.showApplications ? 1.0 : 0.0
         let settings = dashboardState.showSettings ? 1.0 : 0.0
+        let ssd = dashboardState.showSSDDetails ? 1.0 : 0.0
         guard dashboardMounted, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             dashboardState.applicationsExpansion = applications
             dashboardState.settingsExpansion = settings
+            dashboardState.ssdExpansion = ssd
             hostingView.needsLayout = true
             refresh()
             panel.invalidateShadow()
@@ -103,6 +106,7 @@ import Combine
         }
         let startApplications = dashboardState.applicationsExpansion
         let startSettings = dashboardState.settingsExpansion
+        let startSSD = dashboardState.ssdExpansion
         let began = ProcessInfo.processInfo.systemUptime
         disclosureAnimation = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -111,6 +115,7 @@ import Combine
                 let eased = t * t * (3 - 2 * t)
                 dashboardState.applicationsExpansion = startApplications + (applications - startApplications) * eased
                 dashboardState.settingsExpansion = startSettings + (settings - startSettings) * eased
+                dashboardState.ssdExpansion = startSSD + (ssd - startSSD) * eased
                 // One clock drives the SwiftUI reveal, document height and window.
                 // There is no independent window animation chasing a final layout.
                 hostingView.needsLayout = true
@@ -222,7 +227,7 @@ import Combine
         guard let (rect, screen) = anchor() else { return nil }
         let visible = screen.visibleFrame
         let x = min(max(rect.maxX - size.width, visible.minX + 8), visible.maxX - size.width - 8)
-        let top = CommandLine.arguments.contains("--disclosure-only")
+        let top = (CommandLine.arguments.contains("--disclosure-only") || CommandLine.arguments.contains("--ssd-disclosure-only"))
             ? visible.maxY - 6 : min(rect.minY - 6, visible.maxY - 6)
         return NSRect(x: x, y: max(visible.minY + 8, top - size.height), width: size.width, height: size.height)
     }
@@ -244,6 +249,7 @@ import Combine
         maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
         if !dashboardMounted {
             dashboardState.applicationsExpansion = dashboardState.showApplications ? 1 : 0
+            dashboardState.ssdExpansion = dashboardState.showSSDDetails ? 1 : 0
             dashboardState.settingsExpansion = dashboardState.showSettings ? 1 : 0
             hostingView.rootView = AnyView(Dashboard(monitor: monitor, state: dashboardState))
             if CommandLine.arguments.contains("--light") {
@@ -474,10 +480,10 @@ import Combine
         if CommandLine.arguments.contains("--light") { panel.appearance = NSAppearance(named: .aqua) }
         if CommandLine.arguments.contains("--dark") { panel.appearance = NSAppearance(named: .darkAqua) }
         guard monitor.connected else { failVerification("UI verification needs live macmon data.") }
-        if CommandLine.arguments.contains("--disclosure-only") { menuTracking = true }
+        if (CommandLine.arguments.contains("--disclosure-only") || CommandLine.arguments.contains("--ssd-disclosure-only")) { menuTracking = true }
         let previousApplication = NSWorkspace.shared.frontmostApplication?.processIdentifier
         statusItem.button?.performClick(nil)
-        if CommandLine.arguments.contains("--disclosure-only") {
+        if (CommandLine.arguments.contains("--disclosure-only") || CommandLine.arguments.contains("--ssd-disclosure-only")) {
             // A fixed preview viewport also works when the menu-bar host is hidden.
             maximumHeight = min(850, (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 850) - 16
             refresh(forceLayout: true)
@@ -529,6 +535,10 @@ import Combine
 
     /// Short visual check for content disclosure, without running menu stress checks.
     private func verifyDisclosures(directory: String, previousApplication: pid_t?) async {
+        let ssdOnly = CommandLine.arguments.contains("--ssd-disclosure-only")
+        func toggleDetail() {
+            if ssdOnly { dashboardState.showSSDDetails.toggle() } else { dashboardState.toggleApplications() }
+        }
         do {
             try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
             try await Task.sleep(nanoseconds: 2_600_000_000)
@@ -544,28 +554,32 @@ import Combine
                                "clipY": scrollView.contentView.bounds.origin.y, "flipped": hostingView.isFlipped,
                                "applicationsExpansion": dashboardState.applicationsExpansion,
                                "settingsExpansion": dashboardState.settingsExpansion,
+                               "ssdExpansion": dashboardState.ssdExpansion,
+                               "ssdDetailsHeight": dashboardState.ssdDetailsHeight,
                                "settingsHeight": dashboardState.settingsHeight,
                                "scrollBorder": scrollView.borderType.rawValue,
                                "cornerClipped": panelMaterial.layer?.masksToBounds ?? false])
                 try capture(view: panelMaterial, path: directory + "/\(name).png")
             }
             try record("collapsed")
-            dashboardState.toggleApplications()
+            toggleDetail()
             try await Task.sleep(nanoseconds: 90_000_000)
             try record("expanding")
             try await Task.sleep(nanoseconds: 300_000_000)
             try record("expanded")
-            dashboardState.toggleApplications()
+            toggleDetail()
             try await Task.sleep(nanoseconds: 90_000_000)
             try record("collapsing")
             try await Task.sleep(nanoseconds: 260_000_000)
             try record("collapsed-again")
-            dashboardState.toggleSettings()
-            try await Task.sleep(nanoseconds: 350_000_000)
-            try record("settings")
-            dashboardState.toggleSettings()
-            try await Task.sleep(nanoseconds: 350_000_000)
-            try record("settings-closed")
+            if !ssdOnly {
+                dashboardState.toggleSettings()
+                try await Task.sleep(nanoseconds: 350_000_000)
+                try record("settings")
+                dashboardState.toggleSettings()
+                try await Task.sleep(nanoseconds: 350_000_000)
+                try record("settings-closed")
+            }
             captureScreenWindow(path: directory + "/rounded-window-shadow.png", includeShadow: true)
             let data = try JSONSerialization.data(withJSONObject: frames, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: directory + "/disclosures.json"))

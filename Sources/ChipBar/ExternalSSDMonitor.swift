@@ -10,7 +10,7 @@ import ChipBarCore
     @Published private(set) var readings: [SSDReading] = []
     @Published private(set) var status = "外接 SSD 监控已关闭"
     @Published private(set) var executablePath = ""
-    typealias Probe = @Sendable (String, SMARTDeviceType, Bool, BoundedCommand) throws -> SSDProbeResult
+    typealias Probe = @Sendable (String?, SMARTDeviceType, Bool, BoundedCommand) throws -> SSDProbeResult
     private let probe: Probe
     private let defaults: UserDefaults
     private var customPath: String
@@ -79,13 +79,9 @@ import ChipBarCore
         guard enabled else { status = "外接 SSD 监控已关闭"; return }
         guard !paused, !sleeping else { status = "SSD 读取已暂停"; return }
         let candidates = customPath.isEmpty ? ExternalSSDProbe.defaultPaths : [customPath]
-        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            executablePath = ""
-            status = "找不到 smartctl：请安装 smartmontools 或选择程序。"
-            return
-        }
-        executablePath = path
-        status = "正在读取外接 SSD…"
+        let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+        executablePath = path ?? ""
+        status = path == nil ? "未安装 smartctl，正在发现外接磁盘…" : "正在读取外接 SSD…"
         let token = generation, type = deviceType, sudo = useSudo && canUseSudo
         let command = BoundedCommand()
         let probe = self.probe

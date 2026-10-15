@@ -56,6 +56,25 @@ import ChipBarCore
             }
             dispatchMain()
         }
+        if args.contains("--diagnose-storage") {
+            let ids = args.dropFirst().filter { ExternalDisk.validIdentifier($0) }
+            guard !ids.isEmpty else { fputs("请提供当前外接整盘编号，例如 --diagnose-storage disk4\n", stderr); exit(1) }
+            Task.detached(priority: .utility) {
+                let sampler = DiskActivitySampler()
+                _ = await sampler.sample(ids: ids)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                let snapshot = await sampler.sample(ids: ids)
+                for id in ids {
+                    let rate = snapshot.rates[id]
+                    print("\(id) read=\(rate?.readMB.description ?? "unavailable")MB/s write=\(rate?.writeMB.description ?? "unavailable")MB/s")
+                    for space in snapshot.volumes[id] ?? [] {
+                        print("\(space.name) available=\(space.available) total=\(space.total) apfs=\(space.apfs)")
+                    }
+                }
+                exit(snapshot.connected.isEmpty ? 1 : 0)
+            }
+            dispatchMain()
+        }
         if args.contains("--diagnose-ssd") { diagnoseSSD(args); return }
         if args.contains("--diagnose") { diagnose(args); return }
         if let index = args.firstIndex(of: "--snapshot"), args.count > index + 1 {
