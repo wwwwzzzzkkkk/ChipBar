@@ -3,36 +3,96 @@ import ChipBarCore
 
 struct SSDSection: View {
     @ObservedObject var ssd: ExternalSSDMonitor
+    @ObservedObject var state: DashboardState
+    @StateObject private var activity = DiskActivityModel()
     var body: some View {
         if ssd.enabled {
             VStack(alignment: .leading, spacing: 8) {
-                Label("外接 NVMe SSD", systemImage: "externaldrive").font(.subheadline.weight(.medium))
+                Button { state.showSSDDetails.toggle() } label: {
+                    HStack {
+                        Label("外接 NVMe SSD", systemImage: "externaldrive").font(.subheadline.weight(.medium))
+                        Spacer()
+                        Text(state.showSSDDetails ? "收起" : "详情").font(.caption)
+                        Image(systemName: "chevron.down").font(.caption2)
+                            .rotationEffect(.degrees(180 * state.ssdExpansion))
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
                 ForEach(ssd.readings) { row in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(row.temperature?.model ?? row.name).lineLimit(1)
                             Spacer()
-                            Text(row.temperature.flatMap { $0.isFresh() ? $0.composite : nil }
+                            Text(liveTemperature(row).flatMap(\.composite)
                                 .map { String(format: "%.0f °C", $0) } ?? "—")
                                 .monospacedDigit().fontWeight(.medium)
                         }.font(.caption)
-                        if let reading = row.temperature, reading.isFresh() {
-                            Text("综合温度 · \(row.id)").font(.caption2).foregroundStyle(.secondary)
-                            let sensors = reading.sensors.enumerated().compactMap { index, value in
-                                value.map { String(format: "传感器 %d：%.0f°C", index + 1, $0) }
-                            }
-                            if !sensors.isEmpty { Text(sensors.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary) }
-                            Text(health(reading)).font(.caption2)
-                                .foregroundStyle(reading.passed == false || (reading.criticalWarning ?? 0) != 0 ? Color.orange : Color.secondary)
-                            Text("更新于 \(reading.date.formatted(date: .omitted, time: .standard))")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        if let error = row.error { Text(error).font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                        Text(spaceSummary(row.id)).font(.caption2).foregroundStyle(.secondary)
+                        Text(speedSummary(row.id)).font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                     }
                 }
-                Text(ssd.status).font(.caption2).foregroundStyle(.secondary)
+                details.fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { geometry in
+                        Color.clear.onAppear { state.ssdDetailsHeight = geometry.size.height }
+                            .onChange(of: geometry.size.height) { state.ssdDetailsHeight = $0 }
+                    })
+                    .frame(height: state.ssdDetailsHeight * state.ssdExpansion, alignment: .top)
+                    .opacity(state.ssdExpansion).clipped()
+                    .accessibilityHidden(!state.showSSDDetails).disabled(!state.showSSDDetails)
             }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .task(id: ssd.readings.map(\.id).joined(separator: ",")) {
+                    guard !ssd.readings.isEmpty else { return }
+                    await activity.watch(ids: ssd.readings.map(\.id))
+                }
         }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(ssd.readings) { row in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("综合温度 · \(row.id)").font(.caption2).foregroundStyle(.secondary)
+                    if let reading = liveTemperature(row) {
+                        let sensors = reading.sensors.enumerated().compactMap { index, value in
+                            value.map { String(format: "传感器 %d：%.0f°C", index + 1, $0) }
+                        }
+                        if !sensors.isEmpty { Text(sensors.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary) }
+                        Text(health(reading)).font(.caption2)
+                            .foregroundStyle(reading.passed == false || (reading.criticalWarning ?? 0) != 0 ? Color.orange : Color.secondary)
+                        Text("温度更新于 \(reading.date.formatted(date: .omitted, time: .standard))")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    ForEach(volumes(row.id)) { volume in
+                        Text("\(volume.name)：可用 \(bytes(volume.available)) / \(bytes(volume.total))\(volume.apfs ? " · APFS 共享空间" : "")")
+                            .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let error = row.error { Text(error).font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                }
+            }
+            Text("读写速度为整盘实际 I/O，MB/s；面板可见时每 2 秒更新。空间每 30 秒更新，多个卷的共享容量不累加。")
+                .font(.caption2).foregroundStyle(.secondary)
+            Text(ssd.status).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func liveTemperature(_ row: SSDReading) -> SSDTemperature? {
+        if let snapshot = activity.snapshot, !snapshot.connected.contains(row.id) { return nil }
+        return row.temperature.flatMap { $0.isFresh() ? $0 : nil }
+    }
+    private func volumes(_ id: String) -> [DiskVolumeSpace] { activity.snapshot?.volumes[id] ?? [] }
+    private func bytes(_ number: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: number, countStyle: .decimal)
+    }
+    private func spaceSummary(_ id: String) -> String {
+        let spaces = volumes(id)
+        if spaces.count == 1, let space = spaces.first { return "可用 \(bytes(space.available)) / \(bytes(space.total))" }
+        if spaces.count > 1 { return "\(spaces.count) 个卷 · 展开详情查看可用空间" }
+        return "可用空间 — · 未挂载或暂不可读"
+    }
+    private func speedSummary(_ id: String) -> String {
+        guard let snapshot = activity.snapshot, snapshot.connected.contains(id),
+              Date().timeIntervalSince(snapshot.date) <= 6 else { return "读取 — · 写入 — MB/s" }
+        guard let rate = snapshot.rates[id] else { return "读取 — · 写入 — MB/s · 等待采样" }
+        return String(format: "读取 %.1f · 写入 %.1f MB/s", rate.readMB, rate.writeMB)
     }
 
     private func health(_ reading: SSDTemperature) -> String {
@@ -49,7 +109,7 @@ struct SSDSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Toggle("读取外接 NVMe SSD 温度", isOn: $ssd.enabled)
+            Toggle("监控外接 NVMe SSD", isOn: $ssd.enabled)
             if ssd.enabled {
                 Toggle("菜单栏附加 SSD 综合温度", isOn: $ssd.showInMenu)
                 Text("多盘显示最高综合温度；各盘详情见面板。每轮结束后等待 30 秒，不保存历史。")

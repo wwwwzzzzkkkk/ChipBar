@@ -8,6 +8,7 @@ APP="$STAGE/ChipBar.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp -X .build/arm64-apple-macosx/release/ChipBar "$APP/Contents/MacOS/ChipBar"
 ./scripts/icon.sh "$APP/Contents/Resources"
+cp -X Assets/PrivacyInfo.xcprivacy "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 VERSION="$(python3 scripts/version.py show)"
 python3 - "$APP" "$VERSION" <<'PYINFO'
 import plistlib, sys
