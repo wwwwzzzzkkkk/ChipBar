@@ -31,6 +31,9 @@ import AppKit
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 20
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
         materialView.autoresizingMask = [.width, .height]
         contentView.autoresizingMask = [.width, .height]
         autoresizingMask = [.width, .height]

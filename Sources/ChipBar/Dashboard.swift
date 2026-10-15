@@ -9,8 +9,14 @@ final class DashboardState: ObservableObject {
     @Published var chartMetric: PowerMetric = .total
     @Published var showSettings = false
     @Published var showApplications = CommandLine.arguments.contains("--apps")
+    @Published var applicationsExpansion = CommandLine.arguments.contains("--apps") ? 1.0 : 0.0
+    @Published var settingsExpansion = 0.0
+    @Published var settingsHeight: CGFloat = 0
     @Published var applicationMetric: ApplicationResource = CommandLine.arguments.contains("--apps-gpu") ? .gpu : CommandLine.arguments.contains("--apps-ane") ? .ane : .cpu
-    init(showSettings: Bool = false) { self.showSettings = showSettings }
+    init(showSettings: Bool = false) {
+        self.showSettings = showSettings
+        settingsExpansion = showSettings ? 1 : 0
+    }
     func toggleApplications() { showApplications.toggle() }
     func toggleSettings() { showSettings.toggle() }
 }
@@ -37,8 +43,21 @@ struct Dashboard: View {
             temperatures
             errorPanel
             Text(monitor.status).font(.caption).foregroundStyle(.secondary)
-            settingsPanel
-            footer
+            VStack(spacing: 0) {
+                settingsPanel
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(GeometryReader { geometry in
+                        Color.clear
+                            .onAppear { state.settingsHeight = geometry.size.height }
+                            .onChange(of: geometry.size.height) { state.settingsHeight = $0 }
+                    })
+                    .padding(.bottom, 12)
+                    .frame(height: (state.settingsHeight + 12) * state.settingsExpansion, alignment: .top)
+                    .opacity(state.settingsExpansion).clipped()
+                    .accessibilityHidden(!state.showSettings)
+                    .disabled(!state.showSettings)
+                footer
+            }
         }
         .padding(16).frame(width: 390)
         .fixedSize(horizontal: false, vertical: true)
@@ -143,7 +162,6 @@ struct Dashboard: View {
     }
 
     @ViewBuilder private var settingsPanel: some View {
-            if state.showSettings {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("ChipBar \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版本")")
                         .font(.caption).foregroundStyle(.secondary)
@@ -164,8 +182,8 @@ struct Dashboard: View {
                     Text("缺失指标显示 —。零值只表示 macmon 返回零，不能据此确认传感器支持。新芯片请先实测。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-            }
     }
+
 
     @ViewBuilder private var footer: some View {
             VStack {

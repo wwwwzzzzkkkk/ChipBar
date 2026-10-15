@@ -21,17 +21,17 @@ struct ApplicationUsageSection: View {
             Picker("应用资源排行", selection: $state.applicationMetric) {
                 ForEach(ApplicationResource.allCases) { Text($0.rawValue).tag($0) }
             }.labelsHidden().pickerStyle(.segmented)
-            ranking.frame(height: state.showApplications ? 140 : 84, alignment: .topLeading).clipped()
+            ranking.frame(height: 84 + 56 * state.applicationsExpansion, alignment: .topLeading).clipped()
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
-                    Text(shortExplanation).opacity(state.showApplications ? 0 : 1)
-                    Text(explanation).opacity(state.showApplications ? 1 : 0)
+                    Text(shortExplanation).opacity(1 - state.applicationsExpansion)
+                    Text(explanation).opacity(state.applicationsExpansion)
                 }
-                .frame(height: state.showApplications ? 42 : 14, alignment: .topLeading).clipped()
+                .frame(height: 14 + 28 * state.applicationsExpansion, alignment: .topLeading).clipped()
                 Text(activity.snapshot.map { "CPU 可读取 \($0.readableCPUCount)/\($0.processCount) 个进程 · 每 \(max(2, monitor.interval / 1000)) 秒更新" } ?? "正在读取进程计数…")
                     .lineLimit(1).padding(.top, 8)
-                    .opacity(state.showApplications ? 1 : 0)
-                    .frame(height: state.showApplications ? 20 : 0, alignment: .topLeading).clipped()
+                    .opacity(state.applicationsExpansion)
+                    .frame(height: 20 * state.applicationsExpansion, alignment: .topLeading).clipped()
             }.font(.caption2).foregroundStyle(.secondary)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(state.showApplications ? explanation : shortExplanation)
@@ -49,7 +49,7 @@ struct ApplicationUsageSection: View {
                 Spacer()
                 Text(state.showApplications ? "收起" : "更多").font(.caption)
                 Image(systemName: "chevron.down").font(.caption2)
-                    .rotationEffect(.degrees(state.showApplications ? 180 : 0))
+                    .rotationEffect(.degrees(180 * state.applicationsExpansion))
             }.contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityLabel(state.showApplications ? "收起为前三名应用" : "查看前五名应用及指标说明")
@@ -72,7 +72,7 @@ struct ApplicationUsageSection: View {
                             Text(formatted(row)).monospacedDigit()
                                 .foregroundStyle(.primary)
                         }.font(.callout).frame(height: 28)
-                        .opacity(state.showApplications || index < 3 ? 1 : 0)
+                        .opacity(index < 3 ? 1 : state.applicationsExpansion)
                         .accessibilityElement(children: .combine)
                         .accessibilityHidden(!state.showApplications && index >= 3)
                     }

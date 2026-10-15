@@ -28,10 +28,11 @@ import Combine
     private var mouseReleaseCleanup: Task<Void, Never>?
     private var panelMaterial: PanelMaterialView!
     private var subscription: AnyCancellable?
+    private var disclosureSubscription: AnyCancellable?
+    private var disclosureAnimation: Task<Void, Never>?
     private var measuredHeight: CGFloat = 0
     private var maximumHeight: CGFloat = 850
     private var lastSettingsVisible = false
-    private var lastApplicationsVisible = false
     private var menuTracking = false
     private var localEvents: Any?
     private var globalEvents: Any?
@@ -56,7 +57,10 @@ import Combine
         scrollView.scrollerStyle = .overlay
         scrollView.verticalScrollElasticity = .none
         scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.focusRingType = .none
         scrollView.contentView.drawsBackground = false
+        scrollView.contentView.focusRingType = .none
         scrollView.autoresizingMask = [.width, .height]
         scrollView.documentView = hostingView
         panelMaterial = PanelMaterialView(contentView: scrollView)
@@ -75,9 +79,50 @@ import Combine
         panel.onEscape = { [weak self] in self?.hidePanel() }
         installDismissalHandlers()
         refresh()
-        subscription = Publishers.Merge(monitor.objectWillChange, dashboardState.objectWillChange)
+        subscription = Publishers.Merge(monitor.objectWillChange.map { _ in () },
+                                       dashboardState.$settingsHeight.dropFirst().map { _ in () })
             .debounce(for: .milliseconds(30), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.refresh() }
+        disclosureSubscription = dashboardState.$showApplications.combineLatest(dashboardState.$showSettings)
+            .dropFirst().receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.animateDisclosure() }
+    }
+
+    private func animateDisclosure() {
+        disclosureAnimation?.cancel()
+        disclosureAnimation = nil
+        let applications = dashboardState.showApplications ? 1.0 : 0.0
+        let settings = dashboardState.showSettings ? 1.0 : 0.0
+        guard dashboardMounted, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            dashboardState.applicationsExpansion = applications
+            dashboardState.settingsExpansion = settings
+            hostingView.needsLayout = true
+            refresh()
+            panel.invalidateShadow()
+            return
+        }
+        let startApplications = dashboardState.applicationsExpansion
+        let startSettings = dashboardState.settingsExpansion
+        let began = ProcessInfo.processInfo.systemUptime
+        disclosureAnimation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / DashboardMotion.duration)
+                let eased = t * t * (3 - 2 * t)
+                dashboardState.applicationsExpansion = startApplications + (applications - startApplications) * eased
+                dashboardState.settingsExpansion = startSettings + (settings - startSettings) * eased
+                // One clock drives the SwiftUI reveal, document height and window.
+                // There is no independent window animation chasing a final layout.
+                hostingView.needsLayout = true
+                refresh()
+                if t == 1 {
+                    panel.invalidateShadow()
+                    disclosureAnimation = nil
+                    return
+                }
+                do { try await Task.sleep(nanoseconds: 16_000_000) } catch { return }
+            }
+        }
     }
 
     private func installDismissalHandlers() {
@@ -145,8 +190,9 @@ import Combine
             button.setAccessibilityLabel("ChipBar \(monitor.menuMetric.title) \(monitor.menuText)")
         }
         guard dashboardMounted, forceLayout || panel.isVisible else { return }
-        let disclosureChanged = dashboardState.showSettings != lastSettingsVisible
-            || dashboardState.showApplications != lastApplicationsVisible
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         hostingView.layoutSubtreeIfNeeded()
         let height = ceil(hostingView.fittingSize.height)
         guard height.isFinite, height > 0 else { return }
@@ -155,31 +201,15 @@ import Combine
         let documentSize = NSSize(width: 390, height: height)
         if hostingView.frame.size != documentSize { hostingView.setFrameSize(documentSize) }
         let size = NSSize(width: 390, height: min(height, maximumHeight))
-        let settingsChanged = dashboardState.showSettings != lastSettingsVisible
-        let offset = dashboardState.showSettings ? max(0, height - size.height) : 0
-        if let frame = panelFrame(size: size), contentHeightChanged || disclosureChanged || forceLayout {
-            // Resize and reposition as one change, keeping the top edge anchored.
-            // Avoid resizing the glass and scroll view again on every data sample.
-            if disclosureChanged, panel.isVisible, !forceLayout,
-               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = DashboardMotion.duration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    if frame != panel.frame { panel.animator().setFrame(frame, display: true) }
-                    if settingsChanged {
-                        scrollView.contentView.animator().setBoundsOrigin(NSPoint(x: 0, y: offset))
-                    }
-                }
-            } else {
-                if frame != panel.frame { panel.setFrame(frame, display: true) }
-                if settingsChanged {
-                    scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
-                }
-            }
+        if let frame = panelFrame(size: size), contentHeightChanged || forceLayout {
+            if frame != panel.frame { panel.setFrame(frame, display: false) }
+            panelMaterial.layoutSubtreeIfNeeded()
+        }
+        if dashboardState.settingsExpansion > 0 || lastSettingsVisible {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(0, height - size.height)))
         }
         scrollView.reflectScrolledClipView(scrollView.contentView)
         lastSettingsVisible = dashboardState.showSettings
-        lastApplicationsVisible = dashboardState.showApplications
     }
 
     private func anchor() -> (NSRect, NSScreen)? {
@@ -213,6 +243,8 @@ import Combine
         guard let (rect, screen) = anchor() else { return }
         maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
         if !dashboardMounted {
+            dashboardState.applicationsExpansion = dashboardState.showApplications ? 1 : 0
+            dashboardState.settingsExpansion = dashboardState.showSettings ? 1 : 0
             hostingView.rootView = AnyView(Dashboard(monitor: monitor, state: dashboardState))
             if CommandLine.arguments.contains("--light") {
                 hostingView.rootView = AnyView(hostingView.rootView.environment(\.colorScheme, .light))
@@ -248,6 +280,7 @@ import Combine
             guard let self, self.panelTransition == token else { return }
             if visible {
                 self.statusItem.button?.highlight(true)
+                self.panel.invalidateShadow()
             } else {
                 self.panel.orderOut(nil)
                 self.removeDashboard()
@@ -271,13 +304,14 @@ import Combine
 
     private func removeDashboard() {
         guard dashboardMounted else { return }
+        disclosureAnimation?.cancel()
+        disclosureAnimation = nil
         // Hidden NSPanel content still observes Monitor. Remove the dashboard so
         // it cannot keep updating offscreen; settings live separately.
         hostingView.rootView = AnyView(EmptyView())
         dashboardMounted = false
         measuredHeight = 0
         lastSettingsVisible = false
-        lastApplicationsVisible = false
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -507,7 +541,12 @@ import Combine
                                "frontmostApplication": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
                                "chipbarActive": NSApplication.shared.isActive,
                                "hostingY": hostingView.frame.origin.y, "hostingHeight": hostingView.frame.height,
-                               "clipY": scrollView.contentView.bounds.origin.y, "flipped": hostingView.isFlipped])
+                               "clipY": scrollView.contentView.bounds.origin.y, "flipped": hostingView.isFlipped,
+                               "applicationsExpansion": dashboardState.applicationsExpansion,
+                               "settingsExpansion": dashboardState.settingsExpansion,
+                               "settingsHeight": dashboardState.settingsHeight,
+                               "scrollBorder": scrollView.borderType.rawValue,
+                               "cornerClipped": panelMaterial.layer?.masksToBounds ?? false])
                 try capture(view: panelMaterial, path: directory + "/\(name).png")
             }
             try record("collapsed")
@@ -517,7 +556,9 @@ import Combine
             try await Task.sleep(nanoseconds: 300_000_000)
             try record("expanded")
             dashboardState.toggleApplications()
-            try await Task.sleep(nanoseconds: 350_000_000)
+            try await Task.sleep(nanoseconds: 90_000_000)
+            try record("collapsing")
+            try await Task.sleep(nanoseconds: 260_000_000)
             try record("collapsed-again")
             dashboardState.toggleSettings()
             try await Task.sleep(nanoseconds: 350_000_000)
@@ -525,6 +566,7 @@ import Combine
             dashboardState.toggleSettings()
             try await Task.sleep(nanoseconds: 350_000_000)
             try record("settings-closed")
+            captureScreenWindow(path: directory + "/rounded-window-shadow.png", includeShadow: true)
             let data = try JSONSerialization.data(withJSONObject: frames, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: URL(fileURLWithPath: directory + "/disclosures.json"))
             monitor.stop(forQuit: true)
@@ -602,13 +644,13 @@ import Combine
     }
 
     // WindowServer capture includes blur/refraction omitted by bitmap caching.
-    private func captureScreenWindow(path: String) {
+    private func captureScreenWindow(path: String, includeShadow: Bool = false) {
         guard CGPreflightScreenCaptureAccess() else { return }
         panel.displayIfNeeded()
         CATransaction.flush()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-x", "-o", "-l", String(panel.windowNumber), path]
+        process.arguments = ["-x"] + (includeShadow ? [] : ["-o"]) + ["-l", String(panel.windowNumber), path]
         do { try process.run(); process.waitUntilExit() } catch { return }
     }
 
