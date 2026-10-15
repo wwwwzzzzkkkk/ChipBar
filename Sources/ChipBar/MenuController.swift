@@ -31,6 +31,7 @@ import Combine
     private var measuredHeight: CGFloat = 0
     private var maximumHeight: CGFloat = 850
     private var lastSettingsVisible = false
+    private var lastApplicationsVisible = false
     private var menuTracking = false
     private var localEvents: Any?
     private var globalEvents: Any?
@@ -143,23 +144,41 @@ import Combine
             button.setAccessibilityLabel("ChipBar \(monitor.menuMetric.title) \(monitor.menuText)")
         }
         guard dashboardMounted, forceLayout || panel.isVisible else { return }
+        let disclosureChanged = dashboardState.showSettings != lastSettingsVisible
+            || dashboardState.showApplications != lastApplicationsVisible
         hostingView.layoutSubtreeIfNeeded()
         let height = ceil(hostingView.fittingSize.height)
         guard height.isFinite, height > 0 else { return }
+        let contentHeightChanged = height != measuredHeight
         measuredHeight = height
-        hostingView.setFrameSize(NSSize(width: 390, height: height))
+        let documentSize = NSSize(width: 390, height: height)
+        if hostingView.frame.size != documentSize { hostingView.setFrameSize(documentSize) }
         let size = NSSize(width: 390, height: min(height, maximumHeight))
-        panel.setContentSize(size)
-        panelMaterial.setFrameSize(size)
-        panelMaterial.layoutSubtreeIfNeeded()
-        scrollView.setFrameSize(size)
-        if panel.isVisible { positionPanel() }
-        if dashboardState.showSettings != lastSettingsVisible {
-            let offset = dashboardState.showSettings ? max(0, height - size.height) : 0
-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-            lastSettingsVisible = dashboardState.showSettings
+        let settingsChanged = dashboardState.showSettings != lastSettingsVisible
+        let offset = dashboardState.showSettings ? max(0, height - size.height) : 0
+        if let frame = panelFrame(size: size), contentHeightChanged || disclosureChanged || forceLayout {
+            // Resize and reposition as one change, keeping the top edge anchored.
+            // Avoid resizing the glass and scroll view again on every data sample.
+            if disclosureChanged, panel.isVisible, !forceLayout,
+               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = DashboardMotion.duration
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    if frame != panel.frame { panel.animator().setFrame(frame, display: true) }
+                    if settingsChanged {
+                        scrollView.contentView.animator().setBoundsOrigin(NSPoint(x: 0, y: offset))
+                    }
+                }
+            } else {
+                if frame != panel.frame { panel.setFrame(frame, display: true) }
+                if settingsChanged {
+                    scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
+                }
+            }
         }
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        lastSettingsVisible = dashboardState.showSettings
+        lastApplicationsVisible = dashboardState.showApplications
     }
 
     private func anchor() -> (NSRect, NSScreen)? {
@@ -168,12 +187,19 @@ import Combine
         return (window.convertToScreen(button.convert(button.bounds, to: nil)), screen)
     }
 
-    private func positionPanel() {
-        guard let (rect, screen) = anchor() else { return }
+    private func panelFrame(size: NSSize) -> NSRect? {
+        guard let (rect, screen) = anchor() else { return nil }
         let visible = screen.visibleFrame
-        let x = min(max(rect.maxX - panel.frame.width, visible.minX + 8), visible.maxX - panel.frame.width - 8)
-        let top = min(rect.minY - 6, visible.maxY - 6)
-        panel.setFrameOrigin(NSPoint(x: x, y: max(visible.minY + 8, top - panel.frame.height)))
+        let x = min(max(rect.maxX - size.width, visible.minX + 8), visible.maxX - size.width - 8)
+        let top = CommandLine.arguments.contains("--disclosure-only")
+            ? visible.maxY - 6 : min(rect.minY - 6, visible.maxY - 6)
+        return NSRect(x: x, y: max(visible.minY + 8, top - size.height), width: size.width, height: size.height)
+    }
+
+    private func positionPanel() {
+        if let frame = panelFrame(size: panel.frame.size), frame != panel.frame {
+            panel.setFrame(frame, display: true)
+        }
     }
 
     @objc private func togglePanel() {
@@ -187,6 +213,11 @@ import Combine
         maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
         if !dashboardMounted {
             hostingView.rootView = AnyView(Dashboard(monitor: monitor, state: dashboardState))
+            if CommandLine.arguments.contains("--light") {
+                hostingView.rootView = AnyView(hostingView.rootView.environment(\.colorScheme, .light))
+            } else if CommandLine.arguments.contains("--dark") {
+                hostingView.rootView = AnyView(hostingView.rootView.environment(\.colorScheme, .dark))
+            }
             dashboardMounted = true
         }
         refresh(forceLayout: true)
@@ -195,6 +226,7 @@ import Combine
         panelRequestedVisible = true
         NSApplication.shared.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(nil)
         panel.displayIfNeeded()
         animatePanel(visible: true)
     }
@@ -245,6 +277,7 @@ import Combine
         dashboardMounted = false
         measuredHeight = 0
         lastSettingsVisible = false
+        lastApplicationsVisible = false
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -407,7 +440,15 @@ import Combine
         if CommandLine.arguments.contains("--light") { panel.appearance = NSAppearance(named: .aqua) }
         if CommandLine.arguments.contains("--dark") { panel.appearance = NSAppearance(named: .darkAqua) }
         guard monitor.connected else { failVerification("UI verification needs live macmon data.") }
+        if CommandLine.arguments.contains("--disclosure-only") { menuTracking = true }
         statusItem.button?.performClick(nil)
+        if CommandLine.arguments.contains("--disclosure-only") {
+            // A fixed preview viewport also works when the menu-bar host is hidden.
+            maximumHeight = min(850, (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 850) - 16
+            refresh(forceLayout: true)
+            Task { @MainActor in await self.verifyDisclosures(directory: directory) }
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
             do {
                 try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
@@ -449,6 +490,40 @@ import Combine
                 }
             } catch { failVerification(error.localizedDescription) }
         }
+    }
+
+    /// Short visual check for content disclosure, without running menu stress checks.
+    private func verifyDisclosures(directory: String) async {
+        do {
+            try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+            try await Task.sleep(nanoseconds: 2_600_000_000)
+            guard panel.isVisible, dashboardMounted else { failVerification("Disclosure panel was dismissed before capture.") }
+            var frames: [[String: Any]] = []
+            func record(_ name: String) throws {
+                frames.append(["state": name, "height": panel.frame.height, "top": panel.frame.maxY,
+                               "alpha": panel.alphaValue, "mounted": dashboardMounted])
+                try capture(view: panelMaterial, path: directory + "/\(name).png")
+            }
+            try record("collapsed")
+            dashboardState.toggleApplications()
+            try await Task.sleep(nanoseconds: 90_000_000)
+            try record("expanding")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            try record("expanded")
+            dashboardState.toggleApplications()
+            try await Task.sleep(nanoseconds: 350_000_000)
+            try record("collapsed-again")
+            dashboardState.toggleSettings()
+            try await Task.sleep(nanoseconds: 350_000_000)
+            try record("settings")
+            dashboardState.toggleSettings()
+            try await Task.sleep(nanoseconds: 350_000_000)
+            try record("settings-closed")
+            let data = try JSONSerialization.data(withJSONObject: frames, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: directory + "/disclosures.json"))
+            monitor.stop(forQuit: true)
+            NSApplication.shared.terminate(nil)
+        } catch { failVerification(error.localizedDescription) }
     }
 
     private func verifyPanelTransitions(directory: String) async {

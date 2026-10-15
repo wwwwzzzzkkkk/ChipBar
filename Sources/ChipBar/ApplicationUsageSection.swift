@@ -13,34 +13,46 @@ struct ApplicationUsageSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button {
-                state.showApplications.toggle()
-            } label: {
-                HStack {
-                    Text("应用占用").font(.subheadline.weight(.medium))
-                    Spacer()
-                    Text(state.showApplications ? "收起" : "更多").font(.caption)
-                    Image(systemName: state.showApplications ? "chevron.up" : "chevron.down").font(.caption2)
-                }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            .accessibilityLabel(state.showApplications ? "收起为前三名应用" : "查看前五名应用及指标说明")
+            if #available(macOS 14.0, *) {
+                disclosureButton.focusEffectDisabled()
+            } else {
+                disclosureButton
+            }
             Picker("应用资源排行", selection: $state.applicationMetric) {
                 ForEach(ApplicationResource.allCases) { Text($0.rawValue).tag($0) }
             }.labelsHidden().pickerStyle(.segmented)
-            ranking.frame(height: state.showApplications ? 140 : 84, alignment: .topLeading)
-            if state.showApplications {
-                Text(explanation).font(.caption2).foregroundStyle(.secondary)
-                    .frame(height: 42, alignment: .topLeading)
+            ranking.frame(height: state.showApplications ? 140 : 84, alignment: .topLeading).clipped()
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    Text(shortExplanation).opacity(state.showApplications ? 0 : 1)
+                    Text(explanation).opacity(state.showApplications ? 1 : 0)
+                }
+                .frame(height: state.showApplications ? 42 : 14, alignment: .topLeading).clipped()
                 Text(activity.snapshot.map { "CPU 可读取 \($0.readableCPUCount)/\($0.processCount) 个进程 · 每 \(max(2, monitor.interval / 1000)) 秒更新" } ?? "正在读取进程计数…")
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            } else {
-                Text(shortExplanation).font(.caption2).foregroundStyle(.secondary)
-            }
+                    .lineLimit(1).padding(.top, 8)
+                    .frame(height: state.showApplications ? 20 : 0, alignment: .topLeading)
+                    .opacity(state.showApplications ? 1 : 0).clipped()
+            }.font(.caption2).foregroundStyle(.secondary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(state.showApplications ? explanation : shortExplanation)
         }
         .task(id: "\(monitor.paused)-\(monitor.sleeping)-\(monitor.interval)") {
             guard !monitor.paused, !monitor.sleeping else { return }
             await activity.watch(interval: monitor.interval)
         }
+    }
+
+    private var disclosureButton: some View {
+        Button { state.toggleApplications() } label: {
+            HStack {
+                Text("应用占用").font(.subheadline.weight(.medium))
+                Spacer()
+                Text(state.showApplications ? "收起" : "更多").font(.caption)
+                Image(systemName: "chevron.down").font(.caption2)
+                    .rotationEffect(.degrees(state.showApplications ? 180 : 0))
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain)
+            .accessibilityLabel(state.showApplications ? "收起为前三名应用" : "查看前五名应用及指标说明")
     }
 
     @ViewBuilder private var ranking: some View {
@@ -50,9 +62,9 @@ struct ApplicationUsageSection: View {
             let rows = rankedRows(snapshot)
             if !rows.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(rows) { row in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         HStack(spacing: 8) {
-                            Image(systemName: row.appPath == nil ? "gearshape" : "app")
+                            Text("\(index + 1)").monospacedDigit()
                                 .foregroundStyle(.secondary).frame(width: 16).accessibilityHidden(true)
                             Text(row.name).lineLimit(1).truncationMode(.middle)
                                 .help("\(row.name) · 合并 \(row.processCount) 个进程；只统计可读取的计数器")
@@ -61,6 +73,7 @@ struct ApplicationUsageSection: View {
                                 .foregroundStyle(.primary)
                         }.font(.callout).frame(height: 28)
                         .accessibilityElement(children: .combine)
+                        .accessibilityHidden(!state.showApplications && index >= 3)
                     }
                 }
             } else {
@@ -76,7 +89,7 @@ struct ApplicationUsageSection: View {
             .sorted {
                 let lhs = value($0) ?? 0, rhs = value($1) ?? 0
                 return lhs == rhs ? $0.id < $1.id : lhs > rhs
-            }.prefix(state.showApplications ? 5 : 3))
+            }.prefix(5))
     }
 
     private func value(_ row: ApplicationActivityRow) -> Double? {
