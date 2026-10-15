@@ -41,6 +41,7 @@ struct Dashboard: View {
             ApplicationUsageSection(monitor: monitor, state: state)
             trend
             temperatures
+            SSDSection(ssd: monitor.ssd)
             errorPanel
             Text(monitor.status).font(.caption).foregroundStyle(.secondary)
             VStack(spacing: 0) {
@@ -179,6 +180,7 @@ struct Dashboard: View {
                     }
                     Text(monitor.executablePath.isEmpty ? "尚未找到 macmon" : monitor.executablePath)
                         .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                    SSDSettings(ssd: monitor.ssd)
                     Text("缺失指标显示 —。零值只表示 macmon 返回零，不能据此确认传感器支持。新芯片请先实测。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))

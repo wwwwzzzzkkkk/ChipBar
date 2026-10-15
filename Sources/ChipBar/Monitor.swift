@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 import ChipBarCore
 
 @MainActor final class Monitor: ObservableObject {
@@ -26,9 +27,12 @@ import ChipBarCore
     private var lastReceived: Date?
     private var failureCount = 0
     private var observers: [NSObjectProtocol] = []
+    let ssd: ExternalSSDMonitor
+    private var ssdSubscription: AnyCancellable?
     let hardware: String
 
-    init(start: Bool = true) {
+    init(start: Bool = true, ssdDefaults: UserDefaults = .standard) {
+        ssd = ExternalSSDMonitor(defaults: ssdDefaults, start: start)
         let saved = UserDefaults.standard.integer(forKey: "interval")
         interval = [1000, 2000, 5000, 10000].contains(saved) ? saved : 2000
         menuMetric = PowerMetric(rawValue: UserDefaults.standard.string(forKey: "menuMetric") ?? "") ?? .total
@@ -41,16 +45,20 @@ import ChipBarCore
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.sleeping = false; self?.restart() }
         })
+        ssdSubscription = ssd.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         if start { restart() }
     }
 
-    var menuText: String {
+    var menuText: String { powerMenuText + ssd.menuSuffix }
+
+    private var powerMenuText: String {
         if paused || sleeping { return "暂停" }
         guard connected, let power = sample?.power(menuMetric) else { return "— W" }
         return String(format: "%.1f W", power)
     }
 
     func stop(forQuit: Bool = false) {
+        if forQuit { ssd.shutdown() }
         generation = UUID()
         retry?.cancel(); retry = nil
         watchdog?.invalidate(); watchdog = nil
@@ -121,6 +129,7 @@ import ChipBarCore
 
     func togglePause() {
         paused.toggle()
+        ssd.setPaused(paused)
         if paused { stop(); status = "采样已暂停"; error = nil } else { restart() }
     }
 

@@ -6,11 +6,14 @@ import ChipBarCore
     static weak var monitor: Monitor?
     private var menuController: MenuController?
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let monitor = Monitor()
+        let args = CommandLine.arguments
+        let ssdQA = args.contains("--ssd") && (args.contains("--menu-qa") || args.contains("--menu-mouse-qa"))
+        let qaDefaults = UserDefaults(suiteName: "local.chipbar.ssd-qa-\(UUID().uuidString)")!
+        qaDefaults.setVolatileDomain(["ssdEnabled": true, "ssdMenu": true], forName: UserDefaults.argumentDomain)
+        let monitor = Monitor(ssdDefaults: ssdQA ? qaDefaults : .standard)
         Self.monitor = monitor
         let controller = MenuController(monitor: monitor)
         menuController = controller
-        let args = CommandLine.arguments
         if let index = args.firstIndex(of: "--menu-mouse-qa"), args.count > index + 1 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                 Task { @MainActor in await controller.verifyMouseClicks(directory: args[index + 1]) }
@@ -53,6 +56,7 @@ import ChipBarCore
             }
             dispatchMain()
         }
+        if args.contains("--diagnose-ssd") { diagnoseSSD(args); return }
         if args.contains("--diagnose") { diagnose(args); return }
         if let index = args.firstIndex(of: "--snapshot"), args.count > index + 1 {
             snapshot(path: args[index + 1], settings: args.contains("--settings"), light: args.contains("--light")); return
@@ -62,6 +66,30 @@ import ChipBarCore
         let delegate = AppDelegate()
         app.delegate = delegate
         withExtendedLifetime(delegate) { app.run() }
+    }
+
+    static func diagnoseSSD(_ args: [String]) {
+        let index = args.firstIndex(of: "--smartctl")
+        let path = index.flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
+            ?? ExternalSSDProbe.defaultPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
+        let typeIndex = args.firstIndex(of: "--ssd-type")
+        let typeName = typeIndex.flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil } ?? "auto"
+        guard let path, let type = SMARTDeviceType(rawValue: typeName) else {
+            fputs("找不到 smartctl 或设备类型无效。\n", stderr); exit(1)
+        }
+        let runner = BoundedCommand()
+        do {
+            let result = try ExternalSSDProbe.read(path: path, type: type, useSudo: false) {
+                try runner.run($0, $1)
+            }
+            print(result.status)
+            for row in result.readings {
+                if let reading = row.temperature {
+                    print("\(row.id) \(reading.model) composite=\(reading.composite.map(String.init(describing:)) ?? "unavailable")°C sensors=\(reading.sensors) SMART=\(reading.passed.map(String.init(describing:)) ?? "unknown")")
+                } else { print("\(row.id): \(row.error ?? "unavailable")") }
+            }
+            exit(result.readings.contains { $0.temperature != nil } ? 0 : 1)
+        } catch { fputs(error.localizedDescription + "\n", stderr); exit(1) }
     }
 
     /// Bounded live probe, using exactly the same streaming client and decoder as the UI.
@@ -95,7 +123,9 @@ import ChipBarCore
     @MainActor static func snapshot(path: String, settings: Bool, light: Bool) {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
-        let monitor = Monitor()
+        let qaDefaults = UserDefaults(suiteName: "local.chipbar.ssd-snapshot-\(UUID().uuidString)")!
+        if CommandLine.arguments.contains("--ssd") { qaDefaults.setVolatileDomain(["ssdEnabled": true], forName: UserDefaults.argumentDomain) }
+        let monitor = Monitor(ssdDefaults: qaDefaults)
         AppDelegate.monitor = monitor
         let content = NSHostingView(rootView: Dashboard(monitor: monitor, showSettings: settings)
             .background(Color(nsColor: .windowBackgroundColor))

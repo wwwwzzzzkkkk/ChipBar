@@ -1,6 +1,6 @@
 # ChipBar
 
-原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + 有界趋势绘图；无需管理员权限。
+原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + 有界趋势绘图；功率采样无需管理员权限；可选 SSD SMART 读取权限取决于系统与硬盘盒。
 
 本次实测与未验证范围见 [VALIDATION.md](VALIDATION.md)。
 
@@ -19,6 +19,12 @@ macOS 26 及更新版本使用系统原生 `NSGlassEffectView`，提供 Liquid G
 - **ANE 内存**：macOS 15+ 支持时显示系统记账的 ANE 内存（MB）。它不是 ANE 计算利用率；当前没有可靠的通用逐应用 ANE 计算百分比接口。没有内存记账不代表应用没有使用 ANE。
 
 仅在面板可见且采样未暂停时读取，每次至少间隔两秒，不保存应用占用历史。首个样本用于建立 CPU / GPU 基线，随后显示百分比。本机 M1 Pro 已读取到 CPU 和 GPU 应用数据；其他芯片及驱动以实际提供的计数器为准。
+
+## 外接 NVMe SSD 温度
+
+在设置开启 SSD 监控，可在面板查看型号、综合温度、独立传感器与 SMART 状态，并可在菜单栏附加 `SSD 44°C`。默认关闭；每轮结束后等待 30 秒，暂停 / 睡眠 / 退出停止，断连或过期后隐藏旧读数。需要独立安装 `smartmontools`，普通读取优先，权限不足时有明确提示和可选非交互 sudo 支持。
+
+本机 ZHITAI TiPlus7100s 2TB 已通过 `-d auto` 读取真实 NVMe 温度。UGREEN 40Gbps 盒的具体连接模式和 SMART 透传能力以实际识别为准，不按品牌硬编码协议。安装、权限及兼容性见 [外接 SSD 说明](docs/EXTERNAL_SSD.md)。
 
 ## 应用图标
 
@@ -161,7 +167,7 @@ dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/settings.png -
 
 最低接口要求是 `macmon pipe --interval <毫秒> --soc-info`，推荐已验证的 0.9.0。先运行 `macmon pipe --help` 和 `macmon pipe --samples 1 --soc-info` 可检查接口。老版本若不支持参数，应用会显示 macmon 的错误；可更新 macmon 后重试。
 
-解析逐行 JSON，不解析终端仪表盘，不使用 sudo、不启动 HTTP 服务。单个持续进程在后台读取数据；行缓冲上限 1 MB、错误诊断上限 4 KB，历史最多 600 点 / 10 分钟。弹窗关闭时不绘制图表。每秒轻量检查数据是否过期，超时阈值为至少十秒或四个采样间隔。失败按 2、4、8…最多 60 秒退避重试，旧读数立即停止显示。退出会终止子进程，必要时强制清理。
+macmon 解析逐行 JSON，不解析终端仪表盘，不使用 sudo、不启动 HTTP 服务。单个持续进程在后台读取数据；行缓冲上限 1 MB、错误诊断上限 4 KB，历史最多 600 点 / 10 分钟。弹窗关闭时不绘制图表。每秒轻量检查数据是否过期，超时阈值为至少十秒或四个采样间隔。失败按 2、4、8…最多 60 秒退避重试，旧读数立即停止显示。退出会终止子进程，必要时强制清理。
 
 “找不到 macmon”时手动选择路径。若计数器或芯片不支持，在相同机器运行上述真实采样命令，检查 macmon 本身的支持情况。
 
@@ -208,6 +214,8 @@ python3 scripts/version.py package
 
 ## 源码布局
 
+- `Sources/ChipBar/ExternalSSDMonitor.swift` / `SSDSection.swift`：可选 SSD 采样生命周期、菜单栏温度与设置。
+- `Sources/ChipBarCore/SSDTemperature.swift` / `ExternalSSDProbe.swift` / `BoundedCommand.swift`：SMART JSON、外接物理盘发现与有界子进程。
 - `Sources/ChipBarCore/ApplicationActivity.swift`：应用分组与 CPU / GPU 时间差计算。
 - `Sources/ChipBar/ApplicationActivitySampler.swift`：进程 CPU、AGX GPU 与 ANE 内存采样。
 - `Sources/ChipBar/ApplicationUsageSection.swift`：应用占用排行与指标说明。
