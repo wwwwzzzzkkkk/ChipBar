@@ -8,6 +8,7 @@ let package = Package(
     targets: [
         .target(name: "ChipBarCore"),
         .executableTarget(name: "ChipBar", dependencies: ["ChipBarCore"]),
+        .testTarget(name: "ChipBarTests", dependencies: ["ChipBar"]),
         .testTarget(name: "ChipBarCoreTests", dependencies: ["ChipBarCore"], resources: [.copy("Fixtures")])
     ]
 )
