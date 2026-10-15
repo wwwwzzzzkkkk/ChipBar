@@ -3,9 +3,6 @@ import ChipBarCore
 
 enum DashboardMotion {
     static let duration = 0.20
-    static var animation: Animation? {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeInOut(duration: duration)
-    }
 }
 
 final class DashboardState: ObservableObject {
@@ -14,8 +11,8 @@ final class DashboardState: ObservableObject {
     @Published var showApplications = CommandLine.arguments.contains("--apps")
     @Published var applicationMetric: ApplicationResource = CommandLine.arguments.contains("--apps-gpu") ? .gpu : CommandLine.arguments.contains("--apps-ane") ? .ane : .cpu
     init(showSettings: Bool = false) { self.showSettings = showSettings }
-    func toggleApplications() { withAnimation(DashboardMotion.animation) { showApplications.toggle() } }
-    func toggleSettings() { withAnimation(DashboardMotion.animation) { showSettings.toggle() } }
+    func toggleApplications() { showApplications.toggle() }
+    func toggleSettings() { showSettings.toggle() }
 }
 
 struct Dashboard: View {
@@ -45,6 +42,8 @@ struct Dashboard: View {
         }
         .padding(16).frame(width: 390)
         .fixedSize(horizontal: false, vertical: true)
+        // Keep the document at the top while AppKit animates the window height.
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder private var header: some View {
@@ -165,7 +164,6 @@ struct Dashboard: View {
                     Text("缺失指标显示 —。零值只表示 macmon 返回零，不能据此确认传感器支持。新芯片请先实测。")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-                    .transition(.opacity)
             }
     }
 

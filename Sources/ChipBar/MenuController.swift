@@ -14,7 +14,7 @@ import Combine
 @MainActor final class MenuController: NSObject, NSWindowDelegate {
     private let monitor: Monitor
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let panel = MenuPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+    private let panel = MenuPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     private let scrollView = NSScrollView()
     private let dashboardState = DashboardState()
     private var hostingView: NSHostingView<AnyView>!
@@ -65,6 +65,7 @@ import Combine
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .none
@@ -224,7 +225,6 @@ import Combine
         positionPanel()
         if !panel.isVisible { panel.alphaValue = 0 }
         panelRequestedVisible = true
-        NSApplication.shared.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(nil)
         panel.displayIfNeeded()
@@ -441,12 +441,13 @@ import Combine
         if CommandLine.arguments.contains("--dark") { panel.appearance = NSAppearance(named: .darkAqua) }
         guard monitor.connected else { failVerification("UI verification needs live macmon data.") }
         if CommandLine.arguments.contains("--disclosure-only") { menuTracking = true }
+        let previousApplication = NSWorkspace.shared.frontmostApplication?.processIdentifier
         statusItem.button?.performClick(nil)
         if CommandLine.arguments.contains("--disclosure-only") {
             // A fixed preview viewport also works when the menu-bar host is hidden.
             maximumHeight = min(850, (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 850) - 16
             refresh(forceLayout: true)
-            Task { @MainActor in await self.verifyDisclosures(directory: directory) }
+            Task { @MainActor in await self.verifyDisclosures(directory: directory, previousApplication: previousApplication) }
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
@@ -493,7 +494,7 @@ import Combine
     }
 
     /// Short visual check for content disclosure, without running menu stress checks.
-    private func verifyDisclosures(directory: String) async {
+    private func verifyDisclosures(directory: String, previousApplication: pid_t?) async {
         do {
             try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
             try await Task.sleep(nanoseconds: 2_600_000_000)
@@ -501,7 +502,12 @@ import Combine
             var frames: [[String: Any]] = []
             func record(_ name: String) throws {
                 frames.append(["state": name, "height": panel.frame.height, "top": panel.frame.maxY,
-                               "alpha": panel.alphaValue, "mounted": dashboardMounted])
+                               "alpha": panel.alphaValue, "mounted": dashboardMounted,
+                               "previousApplication": previousApplication ?? -1,
+                               "frontmostApplication": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
+                               "chipbarActive": NSApplication.shared.isActive,
+                               "hostingY": hostingView.frame.origin.y, "hostingHeight": hostingView.frame.height,
+                               "clipY": scrollView.contentView.bounds.origin.y, "flipped": hostingView.isFlipped])
                 try capture(view: panelMaterial, path: directory + "/\(name).png")
             }
             try record("collapsed")

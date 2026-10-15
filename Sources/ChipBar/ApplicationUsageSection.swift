@@ -30,8 +30,8 @@ struct ApplicationUsageSection: View {
                 .frame(height: state.showApplications ? 42 : 14, alignment: .topLeading).clipped()
                 Text(activity.snapshot.map { "CPU 可读取 \($0.readableCPUCount)/\($0.processCount) 个进程 · 每 \(max(2, monitor.interval / 1000)) 秒更新" } ?? "正在读取进程计数…")
                     .lineLimit(1).padding(.top, 8)
-                    .frame(height: state.showApplications ? 20 : 0, alignment: .topLeading)
-                    .opacity(state.showApplications ? 1 : 0).clipped()
+                    .opacity(state.showApplications ? 1 : 0)
+                    .frame(height: state.showApplications ? 20 : 0, alignment: .topLeading).clipped()
             }.font(.caption2).foregroundStyle(.secondary)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(state.showApplications ? explanation : shortExplanation)
@@ -72,6 +72,7 @@ struct ApplicationUsageSection: View {
                             Text(formatted(row)).monospacedDigit()
                                 .foregroundStyle(.primary)
                         }.font(.callout).frame(height: 28)
+                        .opacity(state.showApplications || index < 3 ? 1 : 0)
                         .accessibilityElement(children: .combine)
                         .accessibilityHidden(!state.showApplications && index >= 3)
                     }
