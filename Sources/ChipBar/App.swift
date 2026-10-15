@@ -28,6 +28,31 @@ import ChipBarCore
 @main enum Launch {
     @MainActor static func main() {
         let args = CommandLine.arguments
+        if args.contains("--diagnose-apps") {
+            Task.detached(priority: .utility) {
+                let sampler = ApplicationActivitySampler()
+                _ = await sampler.sample()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                let result = await sampler.sample()
+                func rows(_ key: KeyPath<ApplicationActivityRow, Double?>) -> [[String: Any]] {
+                    result.rows.filter { $0[keyPath: key] != nil }
+                        .sorted { ($0[keyPath: key] ?? 0) > ($1[keyPath: key] ?? 0) }.prefix(5)
+                        .map { ["name": $0.name, "percent": $0[keyPath: key]!, "processCount": $0.processCount] }
+                }
+                let report: [String: Any] = ["processCount": result.processCount, "readableCPUCount": result.readableCPUCount,
+                    "gpuClientCount": result.gpuClientCount, "neuralMemorySupported": result.neuralSupported,
+                    "cpu": rows(\.cpuPercent), "gpu": rows(\.gpuPercent),
+                    "aneMemory": result.rows.filter { ($0.neuralBytes ?? 0) > 0 }
+                        .sorted { ($0.neuralBytes ?? 0) > ($1.neuralBytes ?? 0) }.prefix(5)
+                        .map { ["name": $0.name, "bytes": $0.neuralBytes!, "processCount": $0.processCount] }]
+                do {
+                    let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                    print(String(decoding: data, as: UTF8.self))
+                    exit(result.readableCPUCount > 0 ? 0 : 1)
+                } catch { fputs("\(error)\n", stderr); exit(1) }
+            }
+            dispatchMain()
+        }
         if args.contains("--diagnose") { diagnose(args); return }
         if let index = args.firstIndex(of: "--snapshot"), args.count > index + 1 {
             snapshot(path: args[index + 1], settings: args.contains("--settings"), light: args.contains("--light")); return

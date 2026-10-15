@@ -4,6 +4,8 @@ import ChipBarCore
 final class DashboardState: ObservableObject {
     @Published var chartMetric: PowerMetric = .total
     @Published var showSettings = false
+    @Published var showApplications = CommandLine.arguments.contains("--apps")
+    @Published var applicationMetric: ApplicationResource = CommandLine.arguments.contains("--apps-gpu") ? .gpu : CommandLine.arguments.contains("--apps-ane") ? .ane : .cpu
     init(showSettings: Bool = false) { self.showSettings = showSettings }
 }
 
@@ -20,10 +22,11 @@ struct Dashboard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             header
             hero
             powerCards
+            ApplicationUsageSection(monitor: monitor, state: state)
             trend
             temperatures
             errorPanel
@@ -31,7 +34,7 @@ struct Dashboard: View {
             settingsPanel
             footer
         }
-        .padding(20).frame(width: 390)
+        .padding(16).frame(width: 390)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -39,7 +42,7 @@ struct Dashboard: View {
             HStack(spacing: 10) {
                 if let appIcon {
                     Image(nsImage: appIcon).resizable().interpolation(.high)
-                        .frame(width: 32, height: 32).accessibilityHidden(true)
+                        .frame(width: 28, height: 28).accessibilityHidden(true)
                 } else {
                     Image(systemName: "waveform.path.ecg")
                         .font(.title2).foregroundStyle(accent)
@@ -62,7 +65,7 @@ struct Dashboard: View {
                 Text("芯片合计功率").font(.subheadline).foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(value(monitor.connected ? monitor.sample?.total : nil))
-                        .font(.system(size: 44, weight: .medium, design: .rounded)).monospacedDigit()
+                        .font(.system(size: 36, weight: .medium, design: .rounded)).monospacedDigit()
                     Text("W").font(.title3).foregroundStyle(.secondary)
                     Spacer()
                     Image(systemName: "bolt.fill").font(.title).foregroundStyle(accent.opacity(0.6))
@@ -94,12 +97,12 @@ struct Dashboard: View {
                 if monitor.history.compactMap({ $0.power(state.chartMetric) }).isEmpty {
                     Text("等待有效采样后显示趋势")
                         .font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity).frame(height: 115)
+                        .frame(maxWidth: .infinity).frame(height: 95)
                 } else {
                     PowerTrendPlot(points: chartPoints,
                         maximum: max(1, (monitor.history.compactMap { $0.power(state.chartMetric) }.max() ?? 1) * 1.15),
                         axisDates: trendAxisDates, dateFormat: trendDateFormat, accent: accent)
-                    .frame(height: 115)
+                    .frame(height: 95)
                 }
                 HStack {
                     Text("最近 10 分钟 · W")
@@ -169,11 +172,11 @@ struct Dashboard: View {
     }
 
     private func powerCard(_ title: String, _ power: Double?, _ icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: icon).font(.caption).foregroundStyle(.secondary)
             Text("\(value(monitor.connected ? power : nil)) W")
                 .font(.system(.body, design: .rounded).weight(.semibold)).monospacedDigit()
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
     }
 

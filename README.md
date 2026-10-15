@@ -10,6 +10,16 @@ macOS 26 及更新版本使用系统原生 `NSGlassEffectView`，提供 Liquid G
 
 点击菜单栏打开悬浮面板；再次点击、点击其他位置或按 Esc 可关闭。展开约 0.16 秒淡入，收起约 0.12 秒淡出，使用 AppKit 缓入缓出；连续点击可在动画中途反向切换。开启系统“减少动态效果”时直接切换。图标、数据与图表保持上一版样式。
 
+## 应用占用排行
+
+打开面板即可看到“应用占用”前三名，直接切换 CPU、GPU、ANE 内存。点击“更多”查看前五名和指标说明；“收起”恢复前三名。合计功率、分项卡片和趋势采用更紧凑的布局。同一 `.app` 内的辅助进程合并显示；无法可靠归属的独立进程和共享服务单独列出。
+
+- **CPU**：按两次进程 CPU 时间的差值计算；100% 表示占满一个逻辑核心，多核应用可以超过 100%。
+- **GPU**：读取 Apple AGX 驱动的逐进程累计 GPU 时间，以时间差 / 采样间隔显示百分比。多个执行上下文可能重叠，数值可超过 100%，不等同于整机 GPU 利用率的分摊。驱动未提供计数器时显示不可用。
+- **ANE 内存**：macOS 15+ 支持时显示系统记账的 ANE 内存（MB）。它不是 ANE 计算利用率；当前没有可靠的通用逐应用 ANE 计算百分比接口。没有内存记账不代表应用没有使用 ANE。
+
+仅在面板可见且采样未暂停时读取，每次至少间隔两秒，不保存应用占用历史。首个样本用于建立 CPU / GPU 基线，随后显示百分比。本机 M1 Pro 已读取到 CPU 和 GPU 应用数据；其他芯片及驱动以实际提供的计数器为准。
+
 ## 应用图标
 
 原稿和生成提示词保存在 [Assets](Assets/README.md)。构建时自动生成 `AppIcon.icns` 并写入应用图标声明，Finder / 应用程序目录和弹窗标题使用统一图标。菜单栏继续显示适配系统主题的单色闪电与功率文字。
@@ -129,6 +139,10 @@ python3 scripts/ui_soak.py --seconds 60 --legacy-material --gaps --output audit-
 
 # 使用真实数据渲染原生界面 PNG，约七秒后退出
 dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/preview.png
+# 应用占用数据抽查（约两秒）
+dist/ChipBar.app/Contents/MacOS/ChipBar --diagnose-apps
+# 默认显示前三名；加 --apps 展开前五名，可加 --apps-gpu 或 --apps-ane
+dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/apps.png --apps
 # 验证实际菜单栏按钮和弹窗（需本机 macmon；约八秒后退出）
 dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/menu-qa
 # 真实鼠标事件检查；测试时仅运行一份 ChipBar，需要已有的事件投递权限
@@ -194,6 +208,9 @@ python3 scripts/version.py package
 
 ## 源码布局
 
+- `Sources/ChipBarCore/ApplicationActivity.swift`：应用分组与 CPU / GPU 时间差计算。
+- `Sources/ChipBar/ApplicationActivitySampler.swift`：进程 CPU、AGX GPU 与 ANE 内存采样。
+- `Sources/ChipBar/ApplicationUsageSection.swift`：应用占用排行与指标说明。
 - `Sources/ChipBarCore/Metrics.swift`：可选指标解码、数值校验、逐行缓冲。
 - `Sources/ChipBar/StreamClient.swift`：进程与标准输出 / 错误读取。
 - `Sources/ChipBar/Monitor.swift`：状态、重试、过期检测、睡眠恢复与偏好设置。
