@@ -1,3 +1,25 @@
+# ChipBar：历史版本与兼容安装入口
+
+ChipBar 已迁移至 [wwwwzzzzkkkk/macmon 的 `chipbar` 分支](https://github.com/wwwwzzzzkkkk/macmon/tree/chipbar)，源码位于 [`apps/ChipBar/`](https://github.com/wwwwzzzzkkkk/macmon/tree/chipbar/apps/ChipBar)。后续开发、更新记录和安装包以新仓库为准。
+
+- [新仓库与说明](https://github.com/wwwwzzzzkkkk/macmon/tree/chipbar)
+- [新版本下载](https://github.com/wwwwzzzzkkkk/macmon/releases)
+- [本仓库历史安装包](https://github.com/wwwwzzzzkkkk/ChipBar/releases)：全部保留，已有下载链接继续有效。
+
+本仓库继续提供 `wwwwzzzzkkkk/chipbar` Homebrew tap，兼容 Cask 每六小时从新仓库已发布的稳定版本同步一次，也可手动运行同步工作流。现有用户可以继续使用原来的升级命令。
+
+想直接跟随新仓库，可一次性调整 tap 的远程地址：
+
+```sh
+brew tap --custom-remote wwwwzzzzkkkk/chipbar https://github.com/wwwwzzzzkkkk/macmon.git
+brew update
+brew upgrade --cask wwwwzzzzkkkk/chipbar/chipbar
+```
+
+下面保留迁移前的说明供历史参考；开发与发布请使用上面的新仓库。
+
+---
+
 # ChipBar
 
 原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + 有界趋势绘图；功率采样无需管理员权限；可选 SSD SMART 读取权限取决于系统与硬盘盒。

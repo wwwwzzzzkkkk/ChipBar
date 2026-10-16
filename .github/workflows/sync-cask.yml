@@ -1,0 +1,28 @@
+name: Sync ChipBar compatibility Cask
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: chipbar-compatibility-cask
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read the published release and canonical Cask
+        run: python3 scripts/sync_cask.py
+      - name: Save updated compatibility Cask
+        run: |
+          if git diff --quiet -- Casks/chipbar.rb; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Casks/chipbar.rb
+          git commit -m 'Sync ChipBar Homebrew cask from macmon fork'
+          git push origin HEAD:main
