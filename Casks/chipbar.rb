@@ -1,6 +1,6 @@
 cask "chipbar" do
-  version "2.1.4"
-  sha256 "6914e177a25deb54056916448bc3383893bbe8cbc2b369083aa73e7d96ebe305"
+  version "2.1.5"
+  sha256 "4579148a357eb80dfe1546b54fdb0dd5c0dfb724f0ba40e94abe4b6303ef323c"
 
   url "https://github.com/wwwwzzzzkkkk/macmon/releases/download/chipbar-v#{version}/ChipBar-macOS-arm64.zip"
   name "ChipBar"
