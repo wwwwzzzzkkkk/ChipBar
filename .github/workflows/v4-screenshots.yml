@@ -1,13 +1,8 @@
 name: Capture native ChipBar v4 Retina screenshots
 on:
-  push:
-    branches: [release/v4.0.0-standalone-en]
-    paths: [.github/workflows/v4-screenshots.yml]
-concurrency:
-  group: chipbar-v4-native-screenshots
-  cancel-in-progress: true
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   capture:
     # Apple Silicon provides real macmon data when hardware telemetry is available.
@@ -68,16 +63,13 @@ jobs:
               'Operating system: '+platform.platform()+'\n'
           )
           PY
-      - name: Commit real app screenshots and provenance
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/images/v4-dashboard.png docs/images/v4-settings.png docs/images/v4-cluster.png docs/images/CAPTURE.md
-          git commit -m "docs: capture verified Retina screenshots from running ChipBar v4"
-          # A PR can receive newer commits while macOS capture is building.
-          # Rebase the screenshot-only commit onto its latest head.
-          git fetch origin release/v4.0.0-standalone-en
-          git rebase origin/release/v4.0.0-standalone-en
-          git push origin HEAD:release/v4.0.0-standalone-en
+      - name: Upload genuine Retina captures and provenance
+        uses: actions/upload-artifact@v6
+        with:
+          name: ChipBar-native-retina-${{ github.sha }}
+          path: |
+            docs/images/v4-dashboard.png
+            docs/images/v4-settings.png
+            docs/images/v4-cluster.png
+            docs/images/CAPTURE.md
+          retention-days: 30
