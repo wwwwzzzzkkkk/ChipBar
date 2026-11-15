@@ -52,7 +52,7 @@ jobs:
               data=image.read_bytes()
               assert data[:8] == bytes([137,80,78,71,13,10,26,10]), image
               width,height=struct.unpack('>II', data[16:24])
-              assert width >= 700 and height >= 350 and len(data) > 30000, (image,width,height,len(data))
+              assert width >= 1000 and height >= 600 and len(data) > 30000, (image,width,height,len(data))
               print('VERIFIED APP SCREENSHOT',image,width,height,len(data),source)
           pathlib.Path('docs/images/CAPTURE.md').write_text(
               '# Screenshot provenance\n\n'
