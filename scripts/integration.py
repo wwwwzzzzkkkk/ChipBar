@@ -8,7 +8,9 @@ import time
 import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
-binary = root / "dist/ChipBar.app/Contents/MacOS/ChipBar"
+# On Intel CI the distributed app is arm64; run subprocess tests against
+# a separately built host-native binary while retaining the arm64 ZIP.
+binary = root / os.environ.get("CHIPBAR_DIAGNOSE_BINARY", "dist/ChipBar.app/Contents/MacOS/ChipBar")
 if not binary.exists():
     sys.exit("Run scripts/build.sh first")
 

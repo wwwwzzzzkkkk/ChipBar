@@ -1,254 +1,126 @@
-# ChipBar：历史版本与兼容安装入口
-
-ChipBar 已迁移至 [wwwwzzzzkkkk/macmon 的 `chipbar` 分支](https://github.com/wwwwzzzzkkkk/macmon/tree/chipbar)，源码位于 [`apps/ChipBar/`](https://github.com/wwwwzzzzkkkk/macmon/tree/chipbar/apps/ChipBar)。后续开发、更新记录和安装包以新仓库为准。
-
-- [新仓库与说明](https://github.com/wwwwzzzzkkkk/macmon/tree/chipbar)
-- [新版本下载](https://github.com/wwwwzzzzkkkk/macmon/releases)
-- [本仓库历史安装包](https://github.com/wwwwzzzzkkkk/ChipBar/releases)：全部保留，已有下载链接继续有效。
-
-本仓库继续提供 `wwwwzzzzkkkk/chipbar` Homebrew tap，兼容 Cask 每六小时从新仓库已发布的稳定版本同步一次，也可手动运行同步工作流。现有用户可以继续使用原来的升级命令。
-
-想直接跟随新仓库，可一次性调整 tap 的远程地址：
-
-```sh
-brew tap --custom-remote wwwwzzzzkkkk/chipbar https://github.com/wwwwzzzzkkkk/macmon.git
-brew update
-brew upgrade --cask wwwwzzzzkkkk/chipbar/chipbar
-```
-
-下面保留迁移前的说明供历史参考；开发与发布请使用上面的新仓库。
-
----
-
 # ChipBar
 
-原生 macOS 菜单栏功率监控，基于已经安装的 [macmon](https://github.com/vladkens/macmon)。SwiftUI + 原生 NSStatusItem / NSPanel + 有界趋势绘图；功率采样无需管理员权限；可选 SSD SMART 读取权限取决于系统与硬盘盒。
+**Native Apple Silicon monitoring, with an optional read-only two-Mac cluster.**
 
-本次实测与未验证范围见 [VALIDATION.md](VALIDATION.md)。
+<p align="left">
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="https://github.com/wwwwzzzzkkkk/ChipBar/releases/latest">Latest release</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="docs/CLUSTER_MONITOR.md">Cluster guide</a>
+</p>
 
-## 菜单栏面板材质
+<p>
+  <img alt="ChipBar 4.0 native macOS performance dashboard" src="docs/images/v4-dashboard.png" width="900">
+</p>
 
-macOS 26 及更新版本使用系统原生 `NSGlassEffectView`，提供 Liquid Glass 的透明、折射与边缘高光。旧版本 macOS 使用 `NSVisualEffectView` 系统磨砂材质。面板随明暗模式变化，并尊重系统“降低透明度”辅助功能设置。整个滚动区域统一按圆角裁切，关闭矩形边框与焦点描边，内容过渡结束后重新计算窗口阴影。
+*An actual ChipBar SwiftUI screen rendered by the macOS app at high pixel density, **not an AI-generated concept**. Read the [screenshot provenance](docs/images/CAPTURE.md) to see whether the runner captured live hardware readings or a recorded macmon sample.*
 
-点击菜单栏打开不激活 ChipBar 的悬浮面板，保留原应用的活动状态与窗口阴影；再次点击、点击其他位置或按 Esc 可关闭。展开约 0.16 秒淡入，收起约 0.12 秒淡出，使用 AppKit 缓入缓出；连续点击可在动画中途反向切换。开启系统“减少动态效果”时直接切换。图标、数据与图表保持上一版样式。
+## What ChipBar monitors
 
-## 应用占用排行
+ChipBar is a compact native menu-bar companion for Apple Silicon Macs. It uses SwiftUI, AppKit and system-native glass materials (with fallbacks on older macOS versions).
 
-打开面板即可看到“应用占用”前三名，直接切换 CPU、GPU、ANE 内存。点击“更多”查看前五名和指标说明；“收起”恢复前三名。合计功率、分项卡片和趋势采用更紧凑的布局。列表左侧显示排名数字；展开 / 收起使用同一段约 0.2 秒过渡，同步推进内容高度和窗口尺寸；内容顶部保持原位，向下展开、向上收起，设置使用相同节奏。连续点按从当前展开程度反向切换。开启系统“减少动态效果”时直接切换。同一 `.app` 内的辅助进程合并显示；无法可靠归属的独立进程和共享服务单独列出。
+| Monitoring | What you see |
+| --- | --- |
+| **Chip & CPU / GPU** | CPU, GPU and ANE power when available; chip power history, load rings, per-core activity |
+| **Memory & cooling** | Used memory, macOS memory-pressure status, CPU temperature and actual fan RPM |
+| **Power & USB-C** | Internal power flow, power source and available USB-C output measurements |
+| **Storage & network** | Internal/external disk space, read/write throughput and network transfer rates |
+| **External NVMe SSD** | Optional SMART temperature and status where the device and enclosure support it |
+| **App activity** | Process CPU/GPU/ANE-accounting information when available; missing data stays unknown |
+| **Widgets** | Native macOS WidgetKit dashboard and storage widgets, refreshed within system budgets |
 
-- **CPU**：按两次进程 CPU 时间的差值计算；100% 表示占满一个逻辑核心，多核应用可以超过 100%。
-- **GPU**：读取 Apple AGX 驱动的逐进程累计 GPU 时间，以时间差 / 采样间隔显示百分比。多个执行上下文可能重叠，数值可超过 100%，不等同于整机 GPU 利用率的分摊。驱动未提供计数器时显示不可用。
-- **ANE 内存**：macOS 15+ 支持时显示系统记账的 ANE 内存（MB）。它不是 ANE 计算利用率；当前没有可靠的通用逐应用 ANE 计算百分比接口。没有内存记账不代表应用没有使用 ANE。
+Sample intervals are configurable at **1, 2, 5 or 10 seconds** for macmon-backed metrics. The live power chart keeps approximately ten minutes in memory; this release **does not** provide persistent seven-day history or threshold notifications. Measurements may be unavailable on some chip/macOS combinations; unsupported values are not fabricated.
 
-仅在面板可见且采样未暂停时读取，每次至少间隔两秒，不保存应用占用历史。首个样本用于建立 CPU / GPU 基线，随后显示百分比。本机 M1 Pro 已读取到 CPU 和 GPU 应用数据；其他芯片及驱动以实际提供的计数器为准。
+## App screenshots
 
-## 外接 NVMe SSD 温度
+<table>
+  <tr>
+    <td width="52%"><img src="docs/images/v4-dashboard.png" alt="Native ChipBar performance dashboard" width="700"></td>
+    <td width="48%"><img src="docs/images/v4-settings.png" alt="Native ChipBar device and settings screen" width="620"></td>
+  </tr>
+  <tr>
+    <td><b>Performance dashboard</b> — chip power, CPU/GPU, memory, cores, fan, disk and power tiles.</td>
+    <td><b>Device &amp; Settings</b> — sampling cadence, menu-bar metrics and in-app updates.</td>
+  </tr>
+</table>
 
-在设置开启 SSD 监控，默认显示型号、综合温度、剩余可用空间和整盘实时读写速度（MB/s），并可在菜单栏附加 `SSD 44°C`。点击“详情 / 收起”查看传感器、SMART 状态及各卷空间，复用约 0.2 秒的顶部固定展开动画。空间每 30 秒读取，速度仅在面板可见时每 2 秒读取系统原生计数器，关闭后停止；无需管理员权限。默认关闭；每轮结束后等待 30 秒，暂停 / 睡眠 / 退出停止，断连或过期后隐藏旧读数。需要独立安装 `smartmontools`，普通读取优先，权限不足时有明确提示和可选非交互 sudo 支持。
+<p align="center"><img src="docs/images/v4-cluster.png" width="780" alt="Native ChipBar Cluster panel with local monitoring and connection status"></p>
 
-本机 ZHITAI TiPlus7100s 2TB 已通过 `-d auto` 读取真实 NVMe 温度。UGREEN 40Gbps 盒的具体连接模式和 SMART 透传能力以实际识别为准，不按品牌硬编码协议。安装、权限及兼容性见 [外接 SSD 说明](docs/EXTERNAL_SSD.md)。
+<p align="center"><b>Compute Cluster</b> — connect trusted Macs, inspect live readings and monitor OpenFAST tasks without controlling them.</p>
 
-## 应用图标
+**Authenticity and resolution:** These are PNG captures rendered directly from the running ChipBar macOS application, not generative illustrations. They are created and validated by the [native screenshot workflow](.github/workflows/v4-screenshots.yml). Their [capture record](docs/images/CAPTURE.md) identifies the runner and whether sensor readings were live or came from a *recorded real macmon QA sample*. A screenshot cannot guarantee identical sensor availability or window appearance on every Mac.
 
-原稿和生成提示词保存在 [Assets](Assets/README.md)。构建时自动生成 `AppIcon.icns` 并写入应用图标声明，Finder / 应用程序目录和弹窗标题使用统一图标。菜单栏继续显示适配系统主题的单色闪电与功率文字。
+## Compute Cluster · read-only by design
 
-## 与 macmon 的关系
+The optional Cluster panel monitors this Mac and other **explicitly paired Macs** on a trusted local network, including over a configured Thunderbolt Bridge. It displays CPU/GPU use, memory, chip watts, CPU temperature, fan RPM and current simulation status when reliable information exists.
 
-ChipBar 是围绕 macmon 继续开发的原生菜单栏客户端。硬件采样由 [vladkens/macmon](https://github.com/vladkens/macmon) 提供，本项目负责 macOS 界面、趋势展示、设置和采样生命周期管理。感谢 macmon 上游作者与贡献者。
+Cluster states are displayed separately:
 
-当前仓库包含 Swift 客户端源码，通过 macmon 的公开 JSON 接口调用用户独立安装的程序。后续硬件采样兼容性改进适合回馈 macmon 上游，菜单栏体验改进在本项目持续开发。
+| Status | Meaning |
+| --- | --- |
+| **Pair another Mac** | No trusted peer is configured |
+| **Sharing disabled** | Sharing was explicitly paused |
+| **Searching for Macs** | Discovery is active but no peer has been found |
+| **Waiting for telemetry** | A peer was discovered; approval or a valid sample is pending |
+| **Connected** | Fresh authenticated data is available |
+| **Peer offline** | A previously observed peer has stopped providing fresh readings |
 
-![ChipBar 深色界面](preview.png)
+Pairing uses an on-screen six-digit comparison and per-device keychain trust; transmitted telemetry is authenticated and encrypted. OpenFAST progress is obtained from observed running tasks, fresh supported logs/results, or a status file written by your own tooling. Unknown progress is displayed as unknown; CPU usage is never treated as completion percentage.
 
-<details>
-<summary>浅色界面与采样设置</summary>
+**ChipBar is a monitor, not an orchestrator.** It cannot start, stop, cancel, schedule or execute OpenFAST simulations; it provides no remote shell. All computation remains controlled by you or your external tools. See the [complete pairing and progress guide](docs/CLUSTER_MONITOR.md).
 
-![ChipBar 设置](preview-settings.png)
+## Install
 
-</details>
+**Requirements:** Apple Silicon Mac (arm64), **macOS 13 Ventura or newer**. **ChipBar 4.0.0 still requires [macmon](https://github.com/vladkens/macmon) to be installed separately**; an app-bundled macmon and Apple notarization are planned separately and are **not included** here. Some M5-family sensor readings have not been validated across all hardware/OS versions.
 
-## 使用
+### Homebrew (recommended)
 
-### 通过 Homebrew 安装
-
-在 Apple Silicon Mac 的终端中运行（需要已安装 Homebrew）：
+The standalone ChipBar repository itself serves as the Homebrew tap; it is not a separate `homebrew-chipbar` repository.
 
 ```sh
-brew tap wwwwzzzzkkkk/chipbar https://github.com/wwwwzzzzkkkk/ChipBar.git
+brew tap --custom-remote wwwwzzzzkkkk/chipbar https://github.com/wwwwzzzzkkkk/ChipBar.git
 brew install --cask wwwwzzzzkkkk/chipbar/chipbar
-open -a ChipBar
 ```
 
-Homebrew 自动安装依赖 macmon，并将 ChipBar 放进应用程序。应用启动后显示在菜单栏。若 macOS 阻止打开，在“系统设置 → 隐私与安全性”选择“仍要打开”。
-
-以后更新或卸载：
+The Cask declares `macmon` as a Homebrew dependency. To upgrade:
 
 ```sh
-brew update
 brew upgrade --cask wwwwzzzzkkkk/chipbar/chipbar
-open -a ChipBar
-# 卸载 ChipBar，保留 macmon
-brew uninstall --cask wwwwzzzzkkkk/chipbar/chipbar
 ```
 
-### 手动运行
+### Manual installation
 
-1. 打开 `dist/ChipBar.app`，菜单栏出现 `⚡ 2.3 W` 形式的实时读数。
-2. 点击菜单栏图标，查看 CPU / GPU / ANE、芯片合计、温度与最近十分钟趋势。
-3. 点击“设置”，选择 1 / 2 / 5 / 10 秒刷新间隔，或切换菜单栏显示合计 / CPU / GPU。默认两秒。
-4. 默认查找 `/opt/homebrew/bin/macmon`，其次 `/usr/local/bin/macmon`。若安装在其他位置，点击“选择 macmon…”，按 ⌘⇧G 输入所在路径，选择可执行文件。所选程序以当前用户权限运行，请选择可信的 macmon 文件。
-5. “暂停”停止 macmon 进程；“继续”恢复。睡眠时停止，唤醒后自动恢复。设置保存在本机，趋势只保存在内存中，退出即清空。
+1. Install `macmon`: `brew install macmon`.
+2. Download the latest **`ChipBar-macOS-arm64.zip`** and **`SHA256SUMS`** from [GitHub Releases](https://github.com/wwwwzzzzkkkk/ChipBar/releases/latest).
+3. Verify the downloaded ZIP against `SHA256SUMS`, unzip, and move `ChipBar.app` to your Applications folder.
+4. Launch ChipBar from Applications. For supported external NVMe SMART data, install `smartmontools` separately.
 
-菜单栏使用原生状态栏按钮直接显示功率文字，避免系统把标签折叠成单个图标。弹窗按实际内容调整高度；小屏幕上可滚动查看完整设置。
+**Signing disclosure:** This release uses an **ad-hoc macOS signature**, not Apple Developer ID signing, and **has not been notarized**. Gatekeeper may require manual approval in **System Settings → Privacy & Security** after you have verified the official download. ChipBar does not install a privileged daemon for basic sensor monitoring.
 
-两台 Mac 各运行一份应用、各使用本机 macmon。本版本不提供两台机器之间的远程汇总。
+## Languages
 
-## 指标与硬件支持
+The main application supports **English and Simplified Chinese**, selected from macOS preferred languages. Native WidgetKit strings have their own existing English and Simplified Chinese translations. Language coverage includes dashboard labels, major settings, Cluster pairing/status UI, and common runtime messages. Platform/driver error messages and proper device names may be displayed as supplied by macOS.
 
-- **芯片合计 = macmon 的 `all_power`，定义是 CPU + GPU + ANE。** 它不是交流电源输入功率，也不涵盖所有芯片电源域。没有 `all_power` 时，仅当三个分项均有效，才求和补出合计。
-- 不展示 `sys_power`，避免把系统估算值误当作插座读数。真正的电源输入功率仍需外置功率计。
-- 零瓦是 macmon 返回的有效数值；不能单凭零值判断新芯片传感器已受支持。缺失、null、负功率、异常温度和非数值字段显示“— / 不可用”。
-- 动态读取 JSON 中的芯片名称与型号；没有 `soc` 字段时使用本机系统查询。没有按 M1 / M5 名称硬编码指标或功率范围。
-- 实测环境：**MacBookPro18,3 / Apple M1 Pro、macOS 27.2、macmon 0.9.0**。
-- **Mac mini M5 Pro 尚未实机验证。** 可运行同一 arm64 应用，实际支持取决于该机器上的 macmon 和 macOS。启动失败、指标缺失或不支持的计数器会显示原因；不承诺未知芯片传感器支持。
-- 面向 Apple Silicon、macOS 13+。本次未对 macOS 13 至 26 的每个版本做实机测试。
-
-## 构建
-
-安装 Apple Command Line Tools 或 Xcode，建议 Swift 6 / Xcode 16 及更新版本。无外部 Swift 包，无需网络即可构建。
+## Build from source
 
 ```sh
-cd /path/to/ChipBar
+git clone https://github.com/wwwwzzzzkkkk/ChipBar.git
+cd ChipBar
+./scripts/test.sh
 ./scripts/build.sh
 open dist/ChipBar.app
 ```
 
-构建脚本创建 arm64 `.app`，设置 `LSUIElement` 隐藏 Dock 图标，并执行本地 ad-hoc 签名与验证。它没有 Developer ID 签名或 Apple 公证。复制到另一台 Mac 后，若系统阻止运行，可通过“系统设置 → 隐私与安全性 → 仍要打开”允许自己构建且可信的应用。
+Building requires a macOS Xcode/Swift toolchain and a compatible Apple Silicon target. CI builds the arm64 app and its real WidgetKit extension, then verifies signatures and the release archive. The repository's `VERSION`, `CHANGELOG.md` and `scripts/version.py` govern releases.
 
-源码可在 Xcode 中打开 `Package.swift`。当前测试版 SDK 的 `@State` 宏需要完整 Xcode 插件，本项目用 `ObservableObject` / `StateObject` 保存界面状态，以兼容仅安装 Command Line Tools 的环境。
+## Privacy, licensing and limitations
 
-## 安装与更新
+- ChipBar stores settings and monitoring snapshots on-device; Cluster peer identities are stored in macOS Keychain.
+- Network sharing is opt-in and restricted to mutually approved LAN peers. No public Internet remote-control service is provided.
+- Remote simulation reporting is read-only. ChipBar does not collect complete output data or transfer simulation files.
+- Sensor availability depends on hardware, macOS version and installed macmon/smartmontools.
+- This is **not** an Apple-endorsed performance diagnostic and does not claim exact hardware power/throttling identification.
 
-```sh
-./scripts/install.sh
-```
+The underlying sensor collector is [vladkens/macmon](https://github.com/vladkens/macmon), distributed under the [MIT License](LICENSE). Other third-party references are credited in [power sensor licenses](THIRD_PARTY_POWERSENSORS_LICENSE.md) and [USB-C licenses](THIRD_PARTY_USBC_LICENSE.md).
 
-安装到当前用户的 `~/Applications/ChipBar.app` 并启动，无需 sudo。脚本不覆盖已有应用；更新时先退出 ChipBar，将旧副本移走，再重新安装。也可将 `dist/ChipBar.app` 拖到“应用程序”。
-
-开机启动可在“系统设置 → 通用 → 登录项”中添加已安装的 ChipBar。程序不会自动添加登录项。
-
-## 验证与排查
-
-```sh
-# Swift Testing 单元测试，不依赖 XCTest
-./scripts/test.sh
-
-# 四次真实采样，与界面使用相同进程与解析代码
-dist/ChipBar.app/Contents/MacOS/ChipBar --diagnose
-
-# 自定义 macmon 路径
-dist/ChipBar.app/Contents/MacOS/ChipBar --diagnose --macmon /path/to/macmon
-
-# 受控进程故障测试，无需管理员权限
-python3 scripts/integration.py
-
-# 加速读取内存检查：真实 StreamClient，使用夹具，无硬件采样
-python3 scripts/stream_soak.py --samples 20000 --output audit-results/stream-fixed.json
-# 对照旧版（只读 Git 源码，不切换工作区）
-python3 scripts/stream_soak.py --revision v1.0.4 --samples 20000 --output audit-results/stream-baseline.json
-# stderr 路径和 autorelease pool 检查
-python3 scripts/stream_soak.py --samples 3000 --stderr-bytes 4096 --inspect --output audit-results/stderr-fixed.json
-
-# 完整面板加速检查：三分钟内持续打开、关闭、重开；使用夹具
-# 会在当前桌面打开测试窗口；临时路径与间隔不会写入已保存设置
-python3 scripts/ui_soak.py --output audit-results/ui-soak-fixed.json
-# 旧系统材质、缺失采样断线与最终界面截图
-python3 scripts/ui_soak.py --seconds 60 --legacy-material --gaps --output audit-results/ui-soak-gaps.json
-
-# 使用真实数据渲染原生界面 PNG，约七秒后退出
-dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/preview.png
-# 应用占用数据抽查（约两秒）
-dist/ChipBar.app/Contents/MacOS/ChipBar --diagnose-apps
-# 默认显示前三名；加 --apps 展开前五名，可加 --apps-gpu 或 --apps-ane
-dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/apps.png --apps
-# 验证实际菜单栏按钮和弹窗（需本机 macmon；约八秒后退出）
-dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/menu-qa
-# 真实鼠标事件检查；测试时仅运行一份 ChipBar，需要已有的事件投递权限
-# 移动鼠标到图标并点击四次，完成后恢复鼠标位置并退出
-dist/ChipBar.app/Contents/MacOS/ChipBar --menu-mouse-qa /absolute/path/menu-mouse-qa
-# 独立进程执行点按，避免应用主线程延长按键保持时间
-# 桌面须保持解锁；不要并发运行多份 ChipBar 或其他 GUI 检查
-swiftc scripts/status_click_driver.swift -o /tmp/chipbar-status-click-driver
-dist/ChipBar.app/Contents/MacOS/ChipBar --menu-mouse-qa /absolute/path/menu-stress --mouse-driver /tmp/chipbar-status-click-driver --mouse-press-ms 30 --mouse-click-count 4
-# 明暗模式、旧系统材质验证
-dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/light --light
-dist/ChipBar.app/Contents/MacOS/ChipBar --menu-qa /absolute/path/legacy --legacy-material
-# 浅色模式与设置展开的预览
-dist/ChipBar.app/Contents/MacOS/ChipBar --snapshot /absolute/path/settings.png --settings --light
-```
-
-最低接口要求是 `macmon pipe --interval <毫秒> --soc-info`，推荐已验证的 0.9.0。先运行 `macmon pipe --help` 和 `macmon pipe --samples 1 --soc-info` 可检查接口。老版本若不支持参数，应用会显示 macmon 的错误；可更新 macmon 后重试。
-
-macmon 解析逐行 JSON，不解析终端仪表盘，不使用 sudo、不启动 HTTP 服务。单个持续进程在后台读取数据；行缓冲上限 1 MB、错误诊断上限 4 KB，历史最多 600 点 / 10 分钟。弹窗关闭时不绘制图表。每秒轻量检查数据是否过期，超时阈值为至少十秒或四个采样间隔。失败按 2、4、8…最多 60 秒退避重试，旧读数立即停止显示。退出会终止子进程，必要时强制清理。
-
-“找不到 macmon”时手动选择路径。若计数器或芯片不支持，在相同机器运行上述真实采样命令，检查 macmon 本身的支持情况。
-
-单元测试运行需要 macOS 14+ 与 Swift 6 的 Swift Testing；应用运行最低版本仍为 macOS 13。`test.sh` 会为只有 Command Line Tools 的环境补充测试框架和插件路径，并使用独立执行文件避开 File Provider 测试包签名问题。
-
-## 版本管理与发版
-
-每次完成软件更新，同步 GitHub 源码、版本号、更新记录与 Release；交付前确认发布工作流成功，并确认安装包和 Homebrew Cask 已更新。相关约定见 [AGENTS.md](AGENTS.md)。
-
-版本号只在根目录 `VERSION` 中维护。构建自动写入应用的版本和构建编号，设置面板显示安装版本。`CHANGELOG.md` 记录每次更新；Release 和 Homebrew 记录各版本的文件校验值。
-
-完成代码修改后先提交、上传到 `main`，在 `CHANGELOG.md` 的 `[Unreleased]` 区域写更新说明，然后执行：
-
-```sh
-# 1.0.0 → 1.0.1：修复、维护更新
-./scripts/release.sh patch
-
-# 新功能：递增中间版本号
-./scripts/release.sh minor
-
-# 也可指定明确的新版本
-./scripts/release.sh 2.0.0
-```
-
-脚本要求干净的 `main` 且与远程一致，拒绝旧版本或重复标签。它递增 `VERSION`、归档更新记录、提交并一次性上传版本提交和不可覆盖的 Git 标签。GitHub Actions 随后在 Apple Silicon macOS 环境中运行版本测试、解析测试、进程故障检查，构建并检查签名，发布应用 ZIP 和 `SHA256SUMS`，最后更新 `main` 上的 Homebrew Cask。无需手动填写 Cask 校验值。
-
-在 GitHub 的 **Actions → Release** 查看进度。若发布中断，可选择 **Run workflow**，输入已存在的 `vX.Y.Z` 标签修复发布；已有 Release 的应用文件不会被覆盖，Homebrew 使用 GitHub 已发布文件的校验值，也不会退回更旧版本。
-
-发版完成后本机运行 `git pull --ff-only` 同步 Homebrew 配置提交。其他 Mac 使用上面的 `brew update` / `brew upgrade --cask ...` 更新。该流程沿用本地 ad-hoc 签名，不会自动取得 Developer ID 或公证。
-
-普通提交与 Pull Request 会触发 CI，只测试、生成可下载的构建产物，不发布正式版本。自动更新 Cask 的机器人提交使用 GitHub 的工作流令牌，不会递归触发新一轮工作流。
-
-### 本地检查与打包
-
-```sh
-python3 -m unittest discover -s Tests/ReleaseTests -v
-./scripts/test.sh
-./scripts/build.sh
-python3 scripts/integration.py
-python3 scripts/version.py package
-```
-
-打包生成 `dist/ChipBar-macOS-arm64.zip` 和 `dist/SHA256SUMS`；版本、完整性与签名检查失败时不会生成正式包。
-
-## 源码布局
-
-- `Sources/ChipBar/ExternalSSDMonitor.swift` / `SSDSection.swift`：可选 SSD 采样生命周期、菜单栏温度与设置。
-- `Sources/ChipBarCore/SSDTemperature.swift` / `ExternalSSDProbe.swift` / `BoundedCommand.swift`：SMART JSON、外接物理盘发现与有界子进程。
-- `Sources/ChipBarCore/ApplicationActivity.swift`：应用分组与 CPU / GPU 时间差计算。
-- `Sources/ChipBar/ApplicationActivitySampler.swift`：进程 CPU、AGX GPU 与 ANE 内存采样。
-- `Sources/ChipBar/ApplicationUsageSection.swift`：应用占用排行与指标说明。
-- `Sources/ChipBarCore/Metrics.swift`：可选指标解码、数值校验、逐行缓冲。
-- `Sources/ChipBar/StreamClient.swift`：进程与标准输出 / 错误读取。
-- `Sources/ChipBar/Monitor.swift`：状态、重试、过期检测、睡眠恢复与偏好设置。
-- `Sources/ChipBar/Dashboard.swift`：弹窗、趋势与设置。
-- `Sources/ChipBar/PowerTrendPlot.swift`：有界功率折线、坐标与孤立采样点显示。
-- `Sources/ChipBar/App.swift`：应用生命周期、诊断与原生渲染工具。
-- `Sources/ChipBar/MenuController.swift`：菜单栏功率文字、透明悬浮面板、外部点击关闭与小屏滚动，以及真实菜单栏 UI 检查。
-- `Sources/ChipBar/PanelMaterialView.swift`：原生 Liquid Glass 与旧系统磨砂材质适配。
-- `Tests/ChipBarCoreTests`：真实 M1 Pro 夹具、缺失 / 非法值、分片与缓冲边界测试。
-
-接口依据：[JSON pipe 实现](https://github.com/vladkens/macmon/blob/main/src/app/main.rs)、[指标定义](https://github.com/vladkens/macmon/blob/main/src/metrics.rs)，核对日期 2026-10-08；同时以本机 0.9.0 实际输出验证。上游链接可能随版本变化。本项目调用独立安装的 macmon，不包含或修改其可执行文件。
+**Feedback:** [Issues](https://github.com/wwwwzzzzkkkk/ChipBar/issues) · **Release:** [ChipBar v4.0.0](https://github.com/wwwwzzzzkkkk/ChipBar/releases/tag/chipbar-v4.0.0).

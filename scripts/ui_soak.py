@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+import statistics
+import time
 
 
 def main():
@@ -22,6 +24,8 @@ def main():
     parser.add_argument('--no-chart', action='store_true', help='omit only the trend in temporary test sources')
     parser.add_argument('--gaps', action='store_true', help='emit missing power metrics periodically for visual gap QA')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--cpu-compare', action='store_true',
+                        help='Measure the real GUI probe process while Home is open/closed')
     args = parser.parse_args()
     if args.seconds < 30 or args.spacing_ms < 1 or args.prefill < 0:
         parser.error('seconds must be >= 30 and spacing-ms >= 1')
@@ -136,7 +140,59 @@ import SwiftUI
                    '-macmonPath', str(helper), '-interval', '1000']
         if args.legacy_material:
             command.append('--legacy-material')
-        subprocess.run(command, check=True, timeout=args.seconds + 30)
+        if args.cpu_compare:
+            # ps reports per-process %CPU. Its exponentially smoothed value is
+            # useful for open/closed comparison on the SAME hosted Mac, not a
+            # claim about energy draw or a different Apple Silicon device.
+            samples = []
+            start = time.monotonic()
+            probe = subprocess.Popen(command)
+            try:
+                while probe.poll() is None:
+                    elapsed = time.monotonic() - start
+                    phase = ('open' if elapsed < args.seconds * 2 / 3 else
+                             'closed' if elapsed < args.seconds * 5 / 6 else 'reopened')
+                    # Discard the first 2 seconds of every phase to exclude
+                    # transition bursts and the startup page materialization.
+                    phase_start = (0 if phase == 'open' else
+                                   args.seconds * 2 / 3 if phase == 'closed' else
+                                   args.seconds * 5 / 6)
+                    try:
+                        result = subprocess.run(
+                            ['ps', '-p', str(probe.pid), '-o', '%cpu='],
+                            text=True, capture_output=True, check=False)
+                        value = float(result.stdout.strip())
+                        if elapsed - phase_start >= 2:
+                            samples.append({'second': round(elapsed, 2),
+                                            'state': phase, 'cpu_percent': value})
+                    except (ValueError, OSError):
+                        pass
+                    time.sleep(1)
+                code = probe.wait(timeout=5)
+            finally:
+                if probe.poll() is None:
+                    probe.kill()
+                    probe.wait(timeout=5)
+            summary = {}
+            for state in ('open', 'closed', 'reopened'):
+                values = [r['cpu_percent'] for r in samples if r['state'] == state]
+                if values:
+                    summary[state] = {
+                        'samples': len(values), 'mean_cpu_percent': round(statistics.mean(values), 3),
+                        'peak_cpu_percent': round(max(values), 3)
+                    }
+            profile = {'host': subprocess.getoutput('sw_vers -productVersion'),
+                       'method': 'ps -p <probe_pid> -o %cpu=, 1 Hz; 2s phase warm-up excluded',
+                       'workload': 'local synthetic macmon; GUI panel open/closed/reopened',
+                       'summary': summary, 'samples': samples}
+            result_path = args.output.with_suffix('.cpu.json')
+            result_path.write_text(json.dumps(profile, indent=2))
+            print('CHIPBAR_CPU_COMPARISON=' + json.dumps(summary, sort_keys=True), flush=True)
+            print(f'CPU profile: {result_path}', flush=True)
+            if code != 0:
+                raise subprocess.CalledProcessError(code, command)
+        else:
+            subprocess.run(command, check=True, timeout=args.seconds + 30)
     print(f'Results: {args.output}')
 
 

@@ -1,0 +1,220 @@
+// !$*UTF8*$!
+{
+    archiveVersion = 1;
+    classes = {};
+    objectVersion = 56;
+    objects = {
+
+/* Begin PBXBuildFile section */
+        A11111111111111111111111 /* ChipBarWidgets.swift in Sources */ = {
+            isa = PBXBuildFile;
+            fileRef = A22222222222222222222222 /* ChipBarWidgets.swift */;
+        };
+        C11111111111111111111111 /* GlassWidgetViews.swift in Sources */ = { isa = PBXBuildFile; fileRef = C21111111111111111111111 /* GlassWidgetViews.swift */; };
+        C11222222222222222222222 /* GlassWidgetIntents.swift in Sources */ = { isa = PBXBuildFile; fileRef = C21222222222222222222222 /* GlassWidgetIntents.swift */; };
+        C11333333333333333333333 /* ChipBarSnapshot.swift in Sources */ = { isa = PBXBuildFile; fileRef = C21333333333333333333333 /* ChipBarSnapshot.swift */; };
+        C11444444444444444444444 /* Localizable.xcstrings in Resources */ = { isa = PBXBuildFile; fileRef = C21444444444444444444444 /* Localizable.xcstrings */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+        A22222222222222222222222 /* ChipBarWidgets.swift */ = {
+            isa = PBXFileReference;
+            lastKnownFileType = sourcecode.swift;
+            path = ChipBarWidgets.swift;
+            sourceTree = "<group>";
+        };
+        A33333333333333333333333 /* ChipBarWidgets.appex */ = {
+            isa = PBXFileReference;
+            explicitFileType = "wrapper.app-extension";
+            includeInIndex = 0;
+            path = ChipBarWidgets.appex;
+            sourceTree = BUILT_PRODUCTS_DIR;
+        };
+        C21111111111111111111111 /* GlassWidgetViews.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassWidgetViews.swift; sourceTree = "<group>"; };
+        C21222222222222222222222 /* GlassWidgetIntents.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassWidgetIntents.swift; sourceTree = "<group>"; };
+        C21333333333333333333333 /* ChipBarSnapshot.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../ChipBarCore/ChipBarSnapshot.swift; sourceTree = "<group>"; };
+        C21444444444444444444444 /* Localizable.xcstrings */ = { isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+        A44444444444444444444444 = {
+            isa = PBXGroup;
+            children = (
+                A55555555555555555555555 /* Sources */,
+                A66666666666666666666666 /* Products */,
+            );
+            sourceTree = "<group>";
+        };
+        A55555555555555555555555 /* Sources */ = {
+            isa = PBXGroup;
+            children = (
+                A22222222222222222222222 /* ChipBarWidgets.swift */,
+                C21111111111111111111111 /* GlassWidgetViews.swift */,
+                C21222222222222222222222 /* GlassWidgetIntents.swift */,
+                C21333333333333333333333 /* ChipBarSnapshot.swift */,
+                C21444444444444444444444 /* Localizable.xcstrings */,
+            );
+            name = Sources;
+            path = ../Sources/ChipBarWidgets;
+            sourceTree = "<group>";
+        };
+        A66666666666666666666666 /* Products */ = {
+            isa = PBXGroup;
+            children = (
+                A33333333333333333333333 /* ChipBarWidgets.appex */,
+            );
+            name = Products;
+            sourceTree = "<group>";
+        };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+        A77777777777777777777777 /* ChipBarWidgets */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = A88888888888888888888888 /* Build configuration list for PBXNativeTarget "ChipBarWidgets" */;
+            buildPhases = (
+                A99999999999999999999999 /* Sources */,
+                C99999999999999999999999 /* Resources */,
+            );
+            buildRules = ();
+            dependencies = ();
+            name = ChipBarWidgets;
+            productName = ChipBarWidgets;
+            productReference = A33333333333333333333333 /* ChipBarWidgets.appex */;
+            productType = "com.apple.product-type.app-extension";
+        };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+        B11111111111111111111111 /* Project object */ = {
+            isa = PBXProject;
+            attributes = {
+                BuildIndependentTargetsInParallel = YES;
+                LastUpgradeCheck = 1500;
+                TargetAttributes = {};
+            };
+            buildConfigurationList = B22222222222222222222222 /* Build configuration list for PBXProject */;
+            compatibilityVersion = "Xcode 14.0";
+            developmentRegion = en;
+            hasScannedForEncodings = 0;
+            knownRegions = (en, "zh-Hans", Base);
+            mainGroup = A44444444444444444444444;
+            productRefGroup = A66666666666666666666666 /* Products */;
+            projectDirPath = "";
+            projectRoot = "";
+            targets = (
+                A77777777777777777777777 /* ChipBarWidgets */,
+            );
+        };
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+        A99999999999999999999999 /* Sources */ = {
+            isa = PBXSourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (
+                A11111111111111111111111 /* ChipBarWidgets.swift in Sources */,
+                C11111111111111111111111 /* GlassWidgetViews.swift in Sources */,
+                C11222222222222222222222 /* GlassWidgetIntents.swift in Sources */,
+                C11333333333333333333333 /* ChipBarSnapshot.swift in Sources */,
+            );
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+        C99999999999999999999999 /* Resources */ = {
+            isa = PBXResourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (C11444444444444444444444 /* Localizable.xcstrings in Resources */);
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+        B33333333333333333333333 /* Debug Project */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                CLANG_ENABLE_MODULES = YES;
+                MACOSX_DEPLOYMENT_TARGET = 13.0;
+                SDKROOT = macosx;
+                SWIFT_VERSION = 5.0;
+            };
+            name = Debug;
+        };
+        B44444444444444444444444 /* Release Project */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                CLANG_ENABLE_MODULES = YES;
+                MACOSX_DEPLOYMENT_TARGET = 13.0;
+                SDKROOT = macosx;
+                SWIFT_VERSION = 5.0;
+            };
+            name = Release;
+        };
+        B55555555555555555555555 /* Debug Target */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                APPLICATION_EXTENSION_API_ONLY = YES;
+                CODE_SIGNING_ALLOWED = NO;
+                ENABLE_APP_SANDBOX = YES;
+                ENABLE_DEBUG_DYLIB = NO;
+                GENERATE_INFOPLIST_FILE = NO;
+                INFOPLIST_FILE = Info.plist;
+                LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+                MACOSX_DEPLOYMENT_TARGET = 13.0;
+                MARKETING_VERSION = 3.3.6;
+                CURRENT_PROJECT_VERSION = 3.3.6;
+                PRODUCT_BUNDLE_IDENTIFIER = local.chipbar.monitor.widgets;
+                PRODUCT_NAME = ChipBarWidgets;
+                SDKROOT = macosx;
+                SWIFT_VERSION = 5.0;
+            };
+            name = Debug;
+        };
+        B66666666666666666666666 /* Release Target */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                APPLICATION_EXTENSION_API_ONLY = YES;
+                CODE_SIGNING_ALLOWED = NO;
+                ENABLE_APP_SANDBOX = YES;
+                ENABLE_DEBUG_DYLIB = NO;
+                GENERATE_INFOPLIST_FILE = NO;
+                INFOPLIST_FILE = Info.plist;
+                LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks";
+                MACOSX_DEPLOYMENT_TARGET = 13.0;
+                MARKETING_VERSION = 3.3.6;
+                CURRENT_PROJECT_VERSION = 3.3.6;
+                PRODUCT_BUNDLE_IDENTIFIER = local.chipbar.monitor.widgets;
+                PRODUCT_NAME = ChipBarWidgets;
+                SDKROOT = macosx;
+                SWIFT_OPTIMIZATION_LEVEL = "-O";
+                SWIFT_VERSION = 5.0;
+            };
+            name = Release;
+        };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+        A88888888888888888888888 /* Build configuration list for PBXNativeTarget "ChipBarWidgets" */ = {
+            isa = XCConfigurationList;
+            buildConfigurations = (
+                B55555555555555555555555 /* Debug */,
+                B66666666666666666666666 /* Release */,
+            );
+            defaultConfigurationIsVisible = 0;
+            defaultConfigurationName = Release;
+        };
+        B22222222222222222222222 /* Build configuration list for PBXProject */ = {
+            isa = XCConfigurationList;
+            buildConfigurations = (
+                B33333333333333333333333 /* Debug */,
+                B44444444444444444444444 /* Release */,
+            );
+            defaultConfigurationIsVisible = 0;
+            defaultConfigurationName = Release;
+        };
+/* End XCConfigurationList section */
+    };
+    rootObject = B11111111111111111111111 /* Project object */;
+}

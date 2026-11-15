@@ -1,0 +1,133 @@
+name: ChipBar Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - .github/workflows/chipbar-release.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Optional existing version tag to repair; leave blank to build and publish VERSION
+        required: false
+        type: string
+permissions:
+  contents: write
+concurrency:
+  # v3.3.0 release retry: each WidgetKit tile now implements Widget.init().
+  # This workflow update re-triggers release on the repaired chipbar commit.
+  # Separate from stalled legacy macOS 15 release jobs. Tag creation stays immutable.
+  # Per-commit group prevents orphaned queue entries blocking future verified releases.
+  # The immutable version tag still prevents duplicate or mismatched archives.
+  group: chipbar-stable-release-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  release:
+    # ARM macOS runner capacity can cancel jobs before checkout. Cross-build
+    # the distributed arm64 app on the Intel image using Xcode 26.3.
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate manual tag input
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          python3 -c 'import os,re; assert re.fullmatch(r"chipbar-v[0-9]+\.[0-9]+\.[0-9]+",os.environ["TAG"]), "Expected chipbar-vX.Y.Z tag"'
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+          fetch-depth: 0
+      - name: Select Xcode 26 and print runner diagnostics
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
+      - name: Version management tests
+        run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Parser tests
+        run: ./scripts/test.sh
+      # Re-run the 3.4.0 release after splitting complex SwiftUI ViewBuilders.
+      - name: Build arm64 app
+        run: ./scripts/build.sh
+      - name: Verify packaged English and Simplified Chinese resources
+        run: |
+          plutil -lint Resources/en.lproj/Localizable.strings
+          plutil -lint Resources/zh-Hans.lproj/Localizable.strings
+          test -s dist/ChipBar.app/Contents/Resources/en.lproj/Localizable.strings
+          test -s dist/ChipBar.app/Contents/Resources/zh-Hans.lproj/Localizable.strings
+          test "$(plutil -extract CFBundleDevelopmentRegion raw dist/ChipBar.app/Contents/Info.plist)" = en
+      - name: Verify embedded macOS WidgetKit extension
+        run: |
+          WIDGET="dist/ChipBar.app/Contents/PlugIns/ChipBarWidgets.appex"
+          test -x "$WIDGET/Contents/MacOS/ChipBarWidgets"
+          lipo -archs "$WIDGET/Contents/MacOS/ChipBarWidgets" | grep -qw arm64
+          test "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw "$WIDGET/Contents/Info.plist")" = "com.apple.widgetkit-extension"
+          test "$(plutil -extract CFBundleVersion raw "$WIDGET/Contents/Info.plist")" = "$(cat VERSION)"
+          codesign --verify --strict "$WIDGET"
+          codesign --verify --deep --strict dist/ChipBar.app
+      - name: Verify distributed architecture
+        run: lipo -archs dist/ChipBar.app/Contents/MacOS/ChipBar | grep -qw arm64
+      - name: Build host-native integration test binary
+        run: swift build --build-system native -c release --arch x86_64
+      - name: Subprocess fault checks
+        env:
+          CHIPBAR_DIAGNOSE_BINARY: .build/x86_64-apple-macosx/release/ChipBar
+        run: python3 scripts/integration.py
+      - name: Package and verify signature
+        run: python3 scripts/version.py package
+      # Do not reserve the immutable tag unless both verified artifacts exist.
+      - name: Check archive and checksum before tagging
+        run: |
+          test -s dist/ChipBar-macOS-arm64.zip
+          test -s dist/SHA256SUMS
+      # A failed test/build must never reserve an immutable version tag.
+      - name: Create or verify version tag
+        id: release-tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$INPUT_TAG" ]]; then
+            TAG="$INPUT_TAG"
+            PUBLISH=true
+          else
+            TAG="chipbar-v$(cat VERSION)"
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+              TAGGED_COMMIT="$(git rev-parse "$TAG^{commit}")"
+              if [[ "$TAGGED_COMMIT" == "$GITHUB_SHA" ]]; then
+                PUBLISH=true
+              elif git diff --name-only "$EVENT_BEFORE" "$GITHUB_SHA" -- VERSION | grep -q .; then
+                echo "Refusing to move existing tag $TAG from $TAGGED_COMMIT." >&2
+                exit 1
+              else
+                echo "No ChipBar version change; skip publishing $TAG."
+                PUBLISH=false
+              fi
+            else
+              gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" >/dev/null
+              git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+              PUBLISH=true
+            fi
+          fi
+          echo "CHIPBAR_RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+      - name: Check immutable version tag
+        if: steps.release-tag.outputs.publish == 'true'
+        run: python3 scripts/version.py check-tag
+      - name: Publish Release and update Homebrew
+        if: steps.release-tag.outputs.publish == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 scripts/version.py publish
