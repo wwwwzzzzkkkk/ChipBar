@@ -48,7 +48,7 @@ struct ClusterPairingCandidate: Equatable {
     @Published private(set) var taskLayoutVersion = 0
     @Published private(set) var nearby: [ClusterNearbyDevice] = []
     @Published private(set) var pairingCandidate: ClusterPairingCandidate?
-    @Published private(set) var status = "打开两台 Mac 的计算集群页面即可搜索"
+    @Published private(set) var status = ChipBarLocale.choose("Open Cluster on both Macs to discover devices", "打开两台 Mac 的计算集群页面即可搜索")
 
     private static let enabledKey = "chipbar.cluster.enabled.v2"
     private static let nodeIDKey = "chipbar.cluster.node-id.v1"
@@ -70,6 +70,7 @@ struct ClusterPairingCandidate: Equatable {
     private var endpoints: [String: NWEndpoint] = [:]
     private var attempts: [String: Date] = [:]
     private var lastSeen: [String: Date] = [:]
+    private var receivedRemoteTelemetry = false
     private var openFASTScan: Task<Void, Never>?
     private var lastOpenFASTScan = Date.distantPast
 
@@ -116,12 +117,13 @@ struct ClusterPairingCandidate: Equatable {
 
     func setEnabled(_ value: Bool) {
         if value && trusted.isEmpty {
-            status = "请先选择并确认另一台 Mac"
+            status = ChipBarLocale.choose("Pair and approve another Mac first", "请先选择并确认另一台 Mac")
             return
         }
         enabled = value
         UserDefaults.standard.set(value, forKey: Self.enabledKey)
         if value {
+            receivedRemoteTelemetry = false
             start()
             sendToTrustedPeers()
         } else {
@@ -131,7 +133,8 @@ struct ClusterPairingCandidate: Equatable {
             }
             peers = []
             lastSeen = [:]
-            status = "已暂停监控共享"
+            receivedRemoteTelemetry = false
+            status = ChipBarLocale.choose("Monitoring sharing paused", "已暂停监控共享")
             if !panelVisible { stop() }
         }
     }
@@ -146,7 +149,7 @@ struct ClusterPairingCandidate: Equatable {
               let hello = session.hello,
               let key = session.key,
               trusted[id] != hello.publicKey else {
-            status = "设备尚未就绪，请确认两端 ChipBar 已打开"
+            status = ChipBarLocale.choose("Peer not ready. Open ChipBar on both Macs.", "设备尚未就绪，请确认两端 ChipBar 已打开")
             return
         }
         let code = ClusterPairing.verificationCode(
@@ -155,7 +158,7 @@ struct ClusterPairingCandidate: Equatable {
             remotePublicKey: hello.publicKey)
         pairingCandidate = ClusterPairingCandidate(
             id: id, name: hello.name, publicKey: hello.publicKey, code: code)
-        status = "请对照两台 Mac 上显示的六位数字；相同才确认"
+        status = ChipBarLocale.choose("Compare the six-digit codes on both Macs before approving", "请对照两台 Mac 上显示的六位数字；相同才确认")
     }
 
     func cancelPairing() { pairingCandidate = nil }
@@ -167,7 +170,7 @@ struct ClusterPairingCandidate: Equatable {
                   $0.hello?.publicKey == candidate.publicKey &&
                   $0.key != nil
               }) else {
-            status = "配对连接已断开，请重新选择设备"
+            status = ChipBarLocale.choose("Pairing connection lost. Select the device again.", "配对连接已断开，请重新选择设备")
             pairingCandidate = nil
             return
         }
@@ -176,14 +179,14 @@ struct ClusterPairingCandidate: Equatable {
         guard let encoded = try? JSONEncoder().encode(trusted),
               Self.storeKeychain(encoded, account: Self.trustedAccount) else {
             trusted = previous
-            status = "无法保存配对，请检查 macOS 钥匙串"
+            status = ChipBarLocale.choose("Could not save pairing. Check macOS Keychain.", "无法保存配对，请检查 macOS 钥匙串")
             return
         }
         pairingCandidate = nil
         enabled = true
         UserDefaults.standard.set(true, forKey: Self.enabledKey)
         publishNearby()
-        status = "已信任 " + candidate.name + "，等待对方确认后自动连接"
+        status = ChipBarLocale.choose("Trusted ", "已信任 ") + candidate.name + ChipBarLocale.choose(" · awaiting peer approval", "，等待对方确认后自动连接")
         sendApproval(to: session)
         sendToTrustedPeers()
     }
@@ -203,6 +206,15 @@ struct ClusterPairingCandidate: Equatable {
 
     var onlinePeers: [ClusterNodeReadout] {
         peers.filter { $0.isOnline() && enabled }
+    }
+
+    var connectionStatus: ClusterConnectionStatus {
+        ClusterConnectionStatus.resolve(
+            sharingEnabled: enabled,
+            hasTrustedPeer: !trusted.isEmpty,
+            hasNearbyPeer: !nearby.isEmpty,
+            onlinePeerCount: onlinePeers.count,
+            hasReceivedRemoteTelemetry: receivedRemoteTelemetry)
     }
 
     var localNode: ClusterNodeReadout {
@@ -241,10 +253,10 @@ struct ClusterPairingCandidate: Equatable {
                     switch state {
                     case .ready:
                         if self.nearby.isEmpty {
-                            self.status = "正在搜索附近的 Mac…"
+                            self.status = ChipBarLocale.choose("Searching for nearby Macs…", "正在搜索附近的 Mac…")
                         }
                     case .waiting(let error), .failed(let error):
-                        self.status = "共享服务不可用：" + error.localizedDescription
+                        self.status = ChipBarLocale.choose("Sharing service unavailable: ", "共享服务不可用：") + error.localizedDescription
                     default: break
                     }
                 }
@@ -265,8 +277,8 @@ struct ClusterPairingCandidate: Equatable {
                     guard let self else { return }
                     switch state {
                     case .waiting(let error), .failed(let error):
-                        self.status = "搜索不可用：" + error.localizedDescription +
-                            "。请检查本地网络授权与雷雳桥接"
+                        self.status = ChipBarLocale.choose("Discovery unavailable: ", "搜索不可用：") + error.localizedDescription +
+                            ChipBarLocale.choose(". Check Local Network permission and Thunderbolt Bridge.", "。请检查本地网络授权与雷雳桥接")
                     default: break
                     }
                 }
@@ -281,7 +293,7 @@ struct ClusterPairingCandidate: Equatable {
             tickTimer?.tolerance = 0.5
             tick()
         } catch {
-            status = "无法搜索局域网设备：" + error.localizedDescription
+            status = ChipBarLocale.choose("Local network discovery failed: ", "无法搜索局域网设备：") + error.localizedDescription
         }
     }
 
@@ -346,7 +358,7 @@ struct ClusterPairingCandidate: Equatable {
                 case .failed, .cancelled:
                     self.remove(session)
                 case .waiting(let error):
-                    self.status = "设备连接等待中：" + error.localizedDescription
+                    self.status = ChipBarLocale.choose("Waiting for device connection: ", "设备连接等待中：") + error.localizedDescription
                 default: break
                 }
             }
@@ -480,13 +492,15 @@ struct ClusterPairingCandidate: Equatable {
               node.id == hello.id else { return }
         if let last = lastSeen[node.id], node.timestamp <= last { return }
         lastSeen[node.id] = node.timestamp
+        receivedRemoteTelemetry = true
         if let index = peers.firstIndex(where: { $0.id == node.id }) {
             peers[index] = node
         } else if peers.count < 16 {
             peers.append(node)
         }
-        if status.hasPrefix("正在搜索") || status.hasPrefix("已信任") {
-            status = "已连接 " + hello.name
+        if status.hasPrefix(ChipBarLocale.choose("Searching", "正在搜索")) ||
+            status.hasPrefix(ChipBarLocale.choose("Trusted", "已信任")) {
+            status = ChipBarLocale.choose("Connected to ", "已连接 ") + hello.name
         }
     }
 

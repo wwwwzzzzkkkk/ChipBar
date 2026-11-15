@@ -17,9 +17,11 @@ struct ClusterOverviewTile: View {
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("计算集群").font(.caption.weight(.semibold))
-                    Text(cluster.enabled
-                         ? "\(cluster.onlinePeers.count + 1) 台在线 · 只读监控"
-                         : "点击查看附近的 Mac")
+                    Text(cluster.connectionStatus == .online
+                         ? ChipBarLocale.format("%d Macs online · read only",
+                                                "%d 台在线 · 只读监控",
+                                                cluster.onlinePeers.count + 1)
+                         : cluster.connectionStatus.title)
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -71,12 +73,15 @@ struct ClusterMonitorPanel: View {
             .frame(height: 28)
 
             HStack(spacing: 7) {
-                Circle().fill(cluster.enabled ? Color.green : .orange)
-                    .frame(width: 6, height: 6)
-                Text(cluster.enabled
-                     ? "\(cluster.onlinePeers.count + 1) 台在线"
-                     : "等待设备配对")
+                Image(systemName: cluster.connectionStatus.symbol)
+                    .foregroundStyle(cluster.connectionStatus == .online ? .green : .orange)
+                    .font(.system(size: 10))
+                Text(cluster.connectionStatus == .online
+                     ? ChipBarLocale.format("%d Macs online", "%d 台在线",
+                                            cluster.onlinePeers.count + 1)
+                     : cluster.connectionStatus.title)
                     .font(.caption.weight(.medium))
+                    .lineLimit(1).minimumScaleFactor(0.76)
                 Spacer()
                 if cluster.enabled {
                     Toggle("共享", isOn: Binding(
@@ -93,7 +98,7 @@ struct ClusterMonitorPanel: View {
                 HStack {
                     Text("附近设备").font(.caption.weight(.semibold))
                     Spacer(minLength: 0)
-                    Text("\(cluster.nearby.count) 台")
+                    Text(ChipBarLocale.format("%d devices", "%d 台", cluster.nearby.count))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 ForEach(cluster.nearby) { device in
@@ -101,9 +106,9 @@ struct ClusterMonitorPanel: View {
                 }
             } else if cluster.onlinePeers.isEmpty {
                 HStack(spacing: 8) {
-                    Image(systemName: "dot.radiowaves.left.and.right")
+                    Image(systemName: cluster.connectionStatus.symbol)
                         .foregroundStyle(accent)
-                    Text("未发现 MacBook，请确认另一台 Mac 也打开了集群页面")
+                    Text(cluster.connectionStatus.hint)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -171,9 +176,14 @@ struct ClusterMonitorPanel: View {
             }
             if device.paired,
                let reading = cluster.peers.first(where: { $0.id == device.id }) {
-                metricRow(reading)
-                healthRow(reading)
-                taskList(reading)
+                if reading.isOnline() {
+                    metricRow(reading)
+                    healthRow(reading)
+                    taskList(reading)
+                } else {
+                    Label("设备离线", systemImage: "wifi.slash")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             } else if device.paired {
                 HStack {
                     ProgressView().controlSize(.mini)
@@ -189,7 +199,7 @@ struct ClusterMonitorPanel: View {
 
     private func pairingCard(_ pairing: ClusterPairingCandidate) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("配对 \(pairing.name)")
+            Text(ChipBarLocale.choose("Pair ", "配对 ") + pairing.name)
                 .font(.caption.weight(.semibold))
             Text(pairing.code)
                 .font(.system(size: 26, weight: .semibold, design: .rounded))
@@ -223,15 +233,26 @@ struct ClusterMonitorPanel: View {
                 Text(node.name).font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Circle().fill(local || node.isOnline() ? Color.green : .gray)
+                let hasData = local ? monitor.connected : node.isOnline()
+                Circle().fill(hasData ? Color.green : .orange)
                     .frame(width: 6, height: 6)
-                Text(local ? "本机" : node.isOnline() ? "在线" : "离线")
+                Text(local
+                     ? ChipBarLocale.choose(monitor.connected ? "This Mac" : "Waiting for data",
+                                           monitor.connected ? "本机" : "等待数据")
+                     : ChipBarLocale.choose(node.isOnline() ? "Online" : "Offline",
+                                           node.isOnline() ? "在线" : "离线"))
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Text(node.chip).font(.caption2).foregroundStyle(.secondary)
-            metricRow(node)
-            healthRow(node)
-            taskList(node)
+            if (local && monitor.connected) || (!local && node.isOnline()) {
+                metricRow(node)
+                healthRow(node)
+                taskList(node)
+            } else {
+                Label(local ? "等待监控数据" : "设备离线",
+                      systemImage: local ? "clock" : "wifi.slash")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -258,8 +279,8 @@ struct ClusterMonitorPanel: View {
             } ?? "CPU —", systemImage: "thermometer.medium")
             Spacer(minLength: 2)
             Label(node.fanRPM.map {
-                String(format: "风扇 %.0f RPM", $0)
-            } ?? "风扇 —", systemImage: "fanblades")
+                ChipBarLocale.format("Fan %.0f RPM", "风扇 %.0f RPM", $0)
+            } ?? ChipBarLocale.choose("Fan —", "风扇 —"), systemImage: "fanblades")
         }
         .font(.system(size: 10))
         .monospacedDigit()
@@ -285,7 +306,7 @@ struct ClusterMonitorPanel: View {
                     HStack(spacing: 6) {
                         Image(systemName: "square.stack.3d.up")
                             .foregroundStyle(accent)
-                        Text("并行仿真 · \(node.tasks.count) 项")
+                        Text(ChipBarLocale.format("Parallel simulations · %d", "并行仿真 · %d 项", node.tasks.count))
                             .font(.caption.weight(.semibold))
                         Spacer(minLength: 0)
                         Text(groupSummary(node.tasks))
@@ -330,10 +351,10 @@ struct ClusterMonitorPanel: View {
 
     private func groupSummary(_ tasks: [ClusterTaskReadout]) -> String {
         if let average = averageKnownProgress(tasks) {
-            return String(format: "平均 %.0f%%", average * 100)
+            return ChipBarLocale.format("Average %.0f%%", "平均 %.0f%%", average * 100)
         }
         let count = tasks.filter { $0.progress != nil }.count
-        return "\(count)/\(tasks.count) 项有进度"
+        return ChipBarLocale.format("%d/%d with progress", "%d/%d 项有进度", count, tasks.count)
     }
 
     private func taskDetail(_ task: ClusterTaskReadout) -> some View {
@@ -364,13 +385,13 @@ struct ClusterMonitorPanel: View {
                 HStack(spacing: 6) {
                     if let current = task.currentSimTime,
                        let maximum = task.targetSimTime {
-                        Text(String(format: "仿真 %.1f / %.1f s", current, maximum))
+                        Text(ChipBarLocale.format("Simulation %.1f / %.1f s", "仿真 %.1f / %.1f s", current, maximum))
                     } else if let elapsed = task.elapsedSeconds {
-                        Text("已运行 " + duration(elapsed))
+                        Text(ChipBarLocale.choose("Elapsed ", "已运行 ") + duration(elapsed))
                     }
                     Spacer(minLength: 0)
                     if let remaining = task.remainingSeconds {
-                        Text("预计剩余 " + duration(remaining))
+                        Text(ChipBarLocale.choose("ETA ", "预计剩余 ") + duration(remaining))
                     }
                 }
                 .font(.system(size: 10))
@@ -393,7 +414,7 @@ struct ClusterMonitorPanel: View {
 
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 9)).foregroundStyle(.secondary)
+            Text(ChipBarLocale.localized(label)).font(.system(size: 9)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 10, weight: .semibold, design: .rounded))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
         }
