@@ -155,7 +155,7 @@ private struct PowerSankeyFlow: View, Animatable {
         let total = distribution.internalWatts
         let chip = distribution.chipWatts
         let other = distribution.otherWatts
-        return "内部功率 \(value(total)) 瓦，其中芯片 \(value(chip)) 瓦，其余部件 \(value(other)) 瓦（估算）"
+        return ChipBarLocale.choose("Internal power \(value(total)) W: chip \(value(chip)) W, other components \(value(other)) W (estimated)", "内部功率 \(value(total)) 瓦，其中芯片 \(value(chip)) 瓦，其余部件 \(value(other)) 瓦（估算）")
     }
 
     private var leftLabel: some View {
@@ -174,7 +174,7 @@ private struct PowerSankeyFlow: View, Animatable {
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: 3) {
-                Text(sourceTitle)
+                Text(ChipBarLocale.localized(sourceTitle))
                 Text(value(externalWatts == nil ? nil : animatedExternalWatts))
             }
             .font(.system(size: 10))
@@ -191,7 +191,7 @@ private struct PowerSankeyFlow: View, Animatable {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 Circle().fill(tint).frame(width: 7, height: 7)
-                Text(name).font(.system(size: 11, weight: .medium))
+                Text(ChipBarLocale.localized(name)).font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 2) {
@@ -398,7 +398,7 @@ struct PowerSupplyDetailView: View {
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Text(reading.live ? "实时" : "离线")
+                Text(ChipBarLocale.choose(reading.live ? "Live" : "Offline", reading.live ? "实时" : "离线"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(reading.live ? Color.green : Color.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)

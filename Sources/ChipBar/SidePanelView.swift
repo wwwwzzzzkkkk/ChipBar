@@ -56,9 +56,9 @@ struct SidePanelLoadingView: View {
     let kind: DashboardSidePanelKind
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(kind == .power ? "电源与功率" :
+            Label(ChipBarLocale.localized(kind == .power ? "电源与功率" :
                   kind == .externalDisk ? "外置硬盘" :
-                  kind == .cluster ? "计算集群" : "应用占用",
+                  kind == .cluster ? "计算集群" : "应用占用"),
                   systemImage: kind == .power ? "bolt.horizontal.circle" :
                   kind == .externalDisk ? "externaldrive" :
                   kind == .cluster ? "point.3.connected.trianglepath.dotted" : "square.stack.3d.up")

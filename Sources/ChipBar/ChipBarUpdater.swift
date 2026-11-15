@@ -76,10 +76,10 @@ enum ChipBarUpdateFailure: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidRelease: return "GitHub Release 缺少可信的版本或安装包信息。"
-        case .invalidResponse: return "检查更新失败：下载服务未返回有效内容。"
-        case .invalidPackage(let detail): return "安装包校验失败：\(detail)"
-        case .cannotReplace(let detail): return "无法自动替换当前应用：\(detail)"
+        case .invalidRelease: return ChipBarLocale.choose("GitHub Release lacks trusted version or package information.", "GitHub Release 缺少可信的版本或安装包信息。")
+        case .invalidResponse: return ChipBarLocale.choose("Update check failed: the download service returned invalid content.", "检查更新失败：下载服务未返回有效内容。")
+        case .invalidPackage(let detail): return ChipBarLocale.choose("Package validation failed: \(detail)", "安装包校验失败：\(detail)")
+        case .cannotReplace(let detail): return ChipBarLocale.choose("Cannot replace the current app: \(detail)", "无法自动替换当前应用：\(detail)")
         }
     }
 }
@@ -104,7 +104,7 @@ private enum ChipBarUpdateInstaller {
             let explanation = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(),
                                      as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             throw ChipBarUpdateFailure.invalidPackage(
-                explanation.isEmpty ? "验证命令失败（\(process.terminationStatus)）" : explanation)
+                explanation.isEmpty ? ChipBarLocale.choose("Verification failed (\(process.terminationStatus))", "验证命令失败（\(process.terminationStatus)）") : explanation)
         }
     }
 
@@ -121,21 +121,21 @@ private enum ChipBarUpdateInstaller {
               manager.isWritableFile(atPath: parent.path)
         else {
             throw ChipBarUpdateFailure.cannotReplace(
-                "请将 ChipBar.app 移到有写入权限的“应用程序”文件夹；Homebrew 安装请使用 brew upgrade --cask chipbar。")
+                ChipBarLocale.choose("Move ChipBar.app to a writable Applications folder. For Homebrew installs, use brew upgrade --cask chipbar.", "请将 ChipBar.app 移到有写入权限的“应用程序”文件夹；Homebrew 安装请使用 brew upgrade --cask chipbar。"))
         }
         let properties = try target.resourceValues(forKeys: [.isSymbolicLinkKey])
         guard properties.isSymbolicLink != true else {
             throw ChipBarUpdateFailure.cannotReplace(
-                "当前应用是符号链接。请通过 Homebrew 或安装管理器更新。")
+                ChipBarLocale.choose("This app is a symbolic link. Update through Homebrew or the app manager.", "当前应用是符号链接。请通过 Homebrew 或安装管理器更新。"))
         }
 
         let data = try Data(contentsOf: archive, options: .mappedIfSafe)
         guard data.count > 0 && data.count <= 100_000_000 else {
-            throw ChipBarUpdateFailure.invalidPackage("文件大小异常")
+            throw ChipBarUpdateFailure.invalidPackage(ChipBarLocale.choose("Unexpected file size", "文件大小异常"))
         }
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard digest == expectedDigest else {
-            throw ChipBarUpdateFailure.invalidPackage("SHA-256 与发布校验值不一致")
+            throw ChipBarUpdateFailure.invalidPackage(ChipBarLocale.choose("SHA-256 does not match the published checksum", "SHA-256 与发布校验值不一致"))
         }
 
         let root = parent.appendingPathComponent(".chipbar-update-\(UUID().uuidString)",
@@ -148,7 +148,7 @@ private enum ChipBarUpdateInstaller {
             let app = extracted.appendingPathComponent("ChipBar.app", isDirectory: true)
             let values = try app.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard values.isDirectory == true && values.isSymbolicLink != true else {
-                throw ChipBarUpdateFailure.invalidPackage("ZIP 中缺少 ChipBar.app")
+                throw ChipBarUpdateFailure.invalidPackage(ChipBarLocale.choose("ChipBar.app missing from ZIP", "ZIP 中缺少 ChipBar.app"))
             }
             let plistURL = app.appendingPathComponent("Contents/Info.plist")
             guard let info = NSDictionary(contentsOf: plistURL) as? [String: Any],
@@ -156,7 +156,7 @@ private enum ChipBarUpdateInstaller {
                   info["CFBundleShortVersionString"] as? String == version,
                   info["CFBundleVersion"] as? String == version,
                   info["CFBundleExecutable"] as? String == "ChipBar"
-            else { throw ChipBarUpdateFailure.invalidPackage("应用身份或版本不匹配") }
+            else { throw ChipBarUpdateFailure.invalidPackage(ChipBarLocale.choose("App identity or version mismatch", "应用身份或版本不匹配")) }
 
             try run("/usr/bin/codesign", ["--verify", "--strict", "--deep", app.path])
             return PreparedChipBarUpdate(directory: root, application: app)
@@ -169,7 +169,7 @@ private enum ChipBarUpdateInstaller {
 
 @MainActor final class ChipBarUpdater: ObservableObject {
     static let shared = ChipBarUpdater()
-    @Published private(set) var status = "检查是否有可用的新版本。"
+    @Published private(set) var status = ChipBarLocale.choose("Check for available updates.", "检查是否有可用的新版本。")
     @Published private(set) var availableVersion: String?
     @Published private(set) var busy = false
 
@@ -178,7 +178,7 @@ private enum ChipBarUpdateInstaller {
 
     init() {
         if let previous = ChipBarUpdateHelper.lastFailure(), !previous.isEmpty {
-            status = "上次升级未完成：\(previous)"
+            status = ChipBarLocale.choose("Previous update did not complete: \(previous)", "上次升级未完成：\(previous)")
         }
     }
 
@@ -191,7 +191,7 @@ private enum ChipBarUpdateInstaller {
         busy = true
         release = nil
         availableVersion = nil
-        status = "正在检查 GitHub 更新…"
+        status = ChipBarLocale.choose("Checking GitHub for updates…", "正在检查 GitHub 更新…")
         Task {
             defer { busy = false }
             do {
@@ -208,12 +208,12 @@ private enum ChipBarUpdateInstaller {
                 if remote > current {
                     release = latest
                     availableVersion = newVersion
-                    status = "发现新版本 \(newVersion)（当前 \(installedVersion)）。"
+                    status = ChipBarLocale.choose("New version \(newVersion) available (installed \(installedVersion)).", "发现新版本 \(newVersion)（当前 \(installedVersion)）。")
                 } else {
-                    status = "已是最新版本（\(installedVersion)）。"
+                    status = ChipBarLocale.choose("Up to date (\(installedVersion)).", "已是最新版本（\(installedVersion)）。")
                 }
             } catch {
-                status = "检查更新失败：\(error.localizedDescription)"
+                status = ChipBarLocale.choose("Update check failed: \(error.localizedDescription)", "检查更新失败：\(error.localizedDescription)")
             }
         }
     }
@@ -227,14 +227,14 @@ private enum ChipBarUpdateInstaller {
         else { return }
 
         busy = true
-        status = "正在下载并校验 ChipBar \(version)…"
+        status = ChipBarLocale.choose("Downloading and verifying ChipBar \(version)…", "正在下载并校验 ChipBar \(version)…")
         Task {
             do {
                 let manifestData = try await Self.fetch(checksums.browser_download_url)
                 guard manifestData.count <= 100_000,
                       let manifest = String(data: manifestData, encoding: .utf8),
                       let expectedDigest = ChipBarUpdateRelease.archiveDigest(from: manifest)
-                else { throw ChipBarUpdateFailure.invalidPackage("缺少有效 SHA256SUMS") }
+                else { throw ChipBarUpdateFailure.invalidPackage(ChipBarLocale.choose("Valid SHA256SUMS missing", "缺少有效 SHA256SUMS")) }
 
                 let (zipData, response) = try await URLSession.shared.data(
                     from: archive.browser_download_url)
@@ -245,7 +245,7 @@ private enum ChipBarUpdateInstaller {
                     .appendingPathComponent("chipbar-download-\(UUID().uuidString).zip")
                 try zipData.write(to: archiveURL, options: .atomic)
                 defer { try? FileManager.default.removeItem(at: archiveURL) }
-                status = "正在检查应用签名并准备安装…"
+                status = ChipBarLocale.choose("Verifying code signature and preparing installation…", "正在检查应用签名并准备安装…")
                 let target = Bundle.main.bundleURL
                 let prepared = try await Task.detached(priority: .userInitiated) {
                     try ChipBarUpdateInstaller.prepare(
@@ -253,11 +253,11 @@ private enum ChipBarUpdateInstaller {
                         version: version, currentApplication: target)
                 }.value
                 preparedDirectory = prepared.directory
-                status = "正在替换旧版本并重新启动…"
+                status = ChipBarLocale.choose("Replacing previous version and restarting…", "正在替换旧版本并重新启动…")
                 replaceAndRestart(prepared, version: version)
             } catch {
                 busy = false
-                status = "更新失败：\(error.localizedDescription)。原有版本未更改。"
+                status = ChipBarLocale.choose("Update failed: \(error.localizedDescription). Previous version is unchanged.", "更新失败：\(error.localizedDescription)。原有版本未更改。")
             }
         }
     }
@@ -265,7 +265,7 @@ private enum ChipBarUpdateInstaller {
     private func replaceAndRestart(_ prepared: PreparedChipBarUpdate, version: String) {
         guard let executable = Bundle.main.executableURL else {
             busy = false
-            status = "安装失败：无法找到当前应用的可执行文件。"
+            status = ChipBarLocale.choose("Installation failed: current executable could not be found.", "安装失败：无法找到当前应用的可执行文件。")
             try? FileManager.default.removeItem(at: prepared.directory)
             preparedDirectory = nil
             return
@@ -289,11 +289,11 @@ private enum ChipBarUpdateInstaller {
         worker.standardError = FileHandle.nullDevice
         do {
             try worker.run()
-            status = "已校验安装包，正在退出旧版并安装 \(version)…"
+            status = ChipBarLocale.choose("Package verified. Closing old app and installing \(version)…", "已校验安装包，正在退出旧版并安装 \(version)…")
             NSApplication.shared.terminate(nil)
         } catch {
             busy = false
-            status = "无法启动安装辅助进程：\(error.localizedDescription)。旧版本未改变。"
+            status = ChipBarLocale.choose("Cannot start update helper: \(error.localizedDescription). Previous app is unchanged.", "无法启动安装辅助进程：\(error.localizedDescription)。旧版本未改变。")
             try? FileManager.default.removeItem(at: prepared.directory)
             preparedDirectory = nil
         }

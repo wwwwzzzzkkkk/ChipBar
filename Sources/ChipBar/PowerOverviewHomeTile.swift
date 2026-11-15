@@ -81,7 +81,7 @@ struct PowerOverviewHomeTile: View {
                 Image(systemName: icon)
                     .foregroundStyle(tint)
                     .font(.system(size: 10))
-                Text(title)
+                Text(ChipBarLocale.localized(title))
                     .foregroundStyle(.secondary)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)

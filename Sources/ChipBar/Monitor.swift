@@ -10,10 +10,10 @@ enum MemoryPressureLevel: Equatable {
 
     var title: String {
         switch self {
-        case .unknown: return "读取中"
-        case .normal: return "正常"
-        case .warning: return "偏高"
-        case .critical: return "紧张"
+        case .unknown: return ChipBarLocale.choose("Reading", "读取中")
+        case .normal: return ChipBarLocale.choose("Normal", "正常")
+        case .warning: return ChipBarLocale.choose("Elevated", "偏高")
+        case .critical: return ChipBarLocale.choose("Critical", "紧张")
         }
     }
 }
@@ -38,7 +38,7 @@ enum NetworkSamplingPolicy {
     // whole array separately doubled dashboard invalidations on every tick.
     private(set) var history: [Sample] = []
     private(set) var powerChart = PowerChartSnapshot.empty
-    @Published private(set) var status = "正在连接 macmon…"
+    @Published private(set) var status = ChipBarLocale.choose("Connecting to macmon…", "正在连接 macmon…")
     @Published private(set) var error: String?
     @Published private(set) var paused = false
     @Published private(set) var sleeping = false
@@ -91,7 +91,7 @@ enum NetworkSamplingPolicy {
         interval = [1000, 2000, 5000, 10000].contains(saved) ? saved : 2000
         menuMetric = PowerMetric(rawValue: UserDefaults.standard.string(forKey: "menuMetric") ?? "") ?? .total
         customPath = UserDefaults.standard.string(forKey: "macmonPath") ?? ""
-        hardware = Self.sysctlString("machdep.cpu.brand_string") ?? "未知芯片"
+        hardware = Self.sysctlString("machdep.cpu.brand_string") ?? ChipBarLocale.choose("Unknown chip", "未知芯片")
         sample = initialSample
         connected = initialSample != nil
         history = initialSample.map { [$0] } ?? []
@@ -99,12 +99,12 @@ enum NetworkSamplingPolicy {
         // Seed its chart here so the visual preview retains real power data.
         if initialSample != nil {
             powerChart = PowerChartSnapshot.build(history: history, intervalMillis: interval)
-            status = "预览 · 已有真实采样"
+            status = ChipBarLocale.choose("Preview · recorded sample", "预览 · 已有真实采样")
         }
         memoryPressure = Self.currentSystemMemoryPressure() ?? .unknown
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.sleeping = true; self?.configureNetwork(); self?.restartMenuDisk(); self?.stop(); self?.status = "睡眠期间暂停" }
+            Task { @MainActor in self?.sleeping = true; self?.configureNetwork(); self?.restartMenuDisk(); self?.stop(); self?.status = ChipBarLocale.choose("Paused during sleep", "睡眠期间暂停") }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -286,7 +286,7 @@ enum NetworkSamplingPolicy {
     }
 
     private var powerMenuText: String {
-        if paused || sleeping { return "暂停" }
+        if paused || sleeping { return ChipBarLocale.choose("Paused", "暂停") }
         guard connected, let power = sample?.power(menuMetric) else { return "— W" }
         return String(format: "%.1f W", power)
     }
@@ -304,13 +304,13 @@ enum NetworkSamplingPolicy {
         stop()
         guard !paused, !sleeping else { return }
         error = nil
-        status = "正在连接 macmon…"
+        status = ChipBarLocale.choose("Connecting to macmon…", "正在连接 macmon…")
         sample = nil
         lastReceived = nil
         startedAt = Date()
         guard let path = resolvePath() else {
-            error = "找不到可执行的 macmon。请在设置中选择已安装的 macmon 文件。常见位置：/opt/homebrew/bin/macmon。"
-            status = "需要设置 macmon 路径"
+            error = ChipBarLocale.choose("macmon executable not found. Install macmon or choose a valid executable in Settings (usually /opt/homebrew/bin/macmon).", "找不到可执行的 macmon。请在设置中选择已安装的 macmon 文件。常见位置：/opt/homebrew/bin/macmon。")
+            status = ChipBarLocale.choose("macmon path required", "需要设置 macmon 路径")
             return
         }
         executablePath = path
@@ -336,7 +336,7 @@ enum NetworkSamplingPolicy {
                 if !self.connected { self.connected = true }
                 if self.error != nil { self.error = nil }
                 self.failureCount = 0
-                let status = "实时采样 · \(self.interval / 1000) 秒"
+                let status = ChipBarLocale.choose("Live sampling · \(self.interval / 1000) s", "实时采样 · \(self.interval / 1000) 秒")
                 if self.status != status { self.status = status }
             }
         }, onFailure: { [weak self] message in
@@ -347,12 +347,12 @@ enum NetworkSamplingPolicy {
         })
         client = next
         do { try next.start() }
-        catch { fail("无法启动 macmon：\(error.localizedDescription)"); return }
+        catch { fail(ChipBarLocale.choose("Cannot start macmon: ", "无法启动 macmon：") + error.localizedDescription); return }
         watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.generation == token else { return }
                 if Date().timeIntervalSince(self.lastReceived ?? self.startedAt) > max(10, Double(self.interval) / 1000 * 4) {
-                    self.fail("macmon 长时间没有返回有效数据。请检查硬件支持或重新选择程序。")
+                    self.fail(ChipBarLocale.choose("No valid macmon data received. Check device support or select another executable.", "macmon 长时间没有返回有效数据。请检查硬件支持或重新选择程序。"))
                 }
             }
         }
@@ -364,7 +364,7 @@ enum NetworkSamplingPolicy {
         error = message
         failureCount += 1
         let delay = min(60, 2 * Int(pow(2.0, Double(min(failureCount - 1, 5)))))
-        status = "采样中断 · \(delay) 秒后重试"
+        status = ChipBarLocale.choose("Sampling interrupted · retry in \(delay) s", "采样中断 · \(delay) 秒后重试")
         retry = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
             guard !Task.isCancelled else { return }
@@ -377,19 +377,19 @@ enum NetworkSamplingPolicy {
         configureNetwork()
         restartMenuDisk()
         ssd.setPaused(paused)
-        if paused { stop(); status = "采样已暂停"; error = nil } else { restart() }
+        if paused { stop(); status = ChipBarLocale.choose("Sampling paused", "采样已暂停"); error = nil } else { restart() }
     }
 
     func chooseExecutable() {
         let panel = NSOpenPanel()
-        panel.title = "选择 macmon 可执行文件"
-        panel.message = "通常位于 /opt/homebrew/bin/macmon，可按 ⌘⇧G 输入路径。"
+        panel.title = ChipBarLocale.choose("Select macmon executable", "选择 macmon 可执行文件")
+        panel.message = ChipBarLocale.choose("Usually at /opt/homebrew/bin/macmon; press Cmd-Shift-G to enter a path.", "通常位于 /opt/homebrew/bin/macmon，可按 ⌘⇧G 输入路径。")
         panel.directoryURL = URL(fileURLWithPath: "/opt/homebrew/bin")
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             guard FileManager.default.isExecutableFile(atPath: url.path) else {
-                error = "所选文件不能执行，请选择 macmon 程序。"
+                error = ChipBarLocale.choose("Selected file is not executable. Choose macmon.", "所选文件不能执行，请选择 macmon 程序。")
                 return
             }
             customPath = url.path

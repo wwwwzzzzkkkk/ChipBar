@@ -143,13 +143,13 @@ struct Dashboard: View {
                         }
                     }
                 } label: {
-                    Label(tileLayout.editing ? "完成" : "排列",
+                    Label(ChipBarLocale.choose(tileLayout.editing ? "Done" : "Arrange", tileLayout.editing ? "完成" : "排列"),
                           systemImage: tileLayout.editing ? "checkmark.circle.fill" : "square.grid.2x2")
                         .font(.caption2.weight(.medium))
                 }
                 .frame(width: 65, alignment: .trailing)
                 .buttonStyle(ChipBarPressStyle())
-                .accessibilityLabel(tileLayout.editing ? "完成磁贴排列" : "自定义磁贴排列")
+                .accessibilityLabel(ChipBarLocale.choose(tileLayout.editing ? "Finish arranging tiles" : "Customize tile layout", tileLayout.editing ? "完成磁贴排列" : "自定义磁贴排列"))
             }
 
             ChipBarAdaptiveTileLayout {
@@ -347,7 +347,7 @@ struct Dashboard: View {
                 }
                 Spacer()
                 Circle().fill(monitor.connected ? Color.green : Color.orange).frame(width: 6, height: 6)
-                Text(monitor.paused ? "已暂停" : monitor.connected ? "实时" : "等待数据")
+                Text(ChipBarLocale.choose(monitor.paused ? "Paused" : monitor.connected ? "Live" : "Waiting for data", monitor.paused ? "已暂停" : monitor.connected ? "实时" : "等待数据"))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -362,8 +362,8 @@ struct Dashboard: View {
     }
 
     private var memoryTotalSummary: String {
-        guard monitor.connected, let memory = monitor.sample?.memory else { return "共 — GB" }
-        return String(format: "共 %.1f GB", memory.totalGiB)
+        guard monitor.connected, let memory = monitor.sample?.memory else { return ChipBarLocale.choose("Total — GB", "共 — GB") }
+        return ChipBarLocale.format("Total %.1f GB", "共 %.1f GB", memory.totalGiB)
     }
 
     /// One and only one power history chart: the headline and real rolling
@@ -425,7 +425,7 @@ struct Dashboard: View {
             HStack(spacing: 8) {
                 Text("最近 10 分钟")
                 Spacer()
-                Text("均值 \(value(monitor.powerChart.average)) W")
+                Text(ChipBarLocale.choose("Average \(value(monitor.powerChart.average)) W", "均值 \(value(monitor.powerChart.average)) W"))
             }
             .font(.system(size: 9))
             .foregroundStyle(.secondary)
@@ -475,7 +475,7 @@ struct Dashboard: View {
                 Image(systemName: icon)
                     .font(.system(size: 13))
                     .foregroundStyle(accent)
-                Text(title)
+                Text(ChipBarLocale.localized(title))
                     .font(.caption.weight(.medium))
                     .lineLimit(1)
                 Spacer(minLength: 2)
@@ -498,7 +498,7 @@ struct Dashboard: View {
             .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
         }
         .buttonStyle(ChipBarPressStyle())
-        .accessibilityLabel("\(title)，\(kind == .power ? wattage(trailingValue) : "")，\(selected ? "收起" : "在侧边卡片展开")")
+        .accessibilityLabel(ChipBarLocale.choose("\(ChipBarLocale.localized(title)), \(selected ? "collapse" : "expand") in side panel", "\(title)，\(kind == .power ? wattage(trailingValue) : "")，\(selected ? "收起" : "在侧边卡片展开")"))
     }
 
     private func wattage(_ power: Double?) -> String {
@@ -563,7 +563,7 @@ struct Dashboard: View {
                     Label("菜单栏显示", systemImage: "menubar.rectangle")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
-                    Text("\(monitor.menuItems.count + (monitor.ssd.menuTemperaturesEnabled ? 1 : 0)) / 9 已显示")
+                    Text(ChipBarLocale.choose("\(monitor.menuItems.count + (monitor.ssd.menuTemperaturesEnabled ? 1 : 0)) / 9 shown", "\(monitor.menuItems.count + (monitor.ssd.menuTemperaturesEnabled ? 1 : 0)) / 9 已显示"))
                         .font(.caption2)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -589,7 +589,7 @@ struct Dashboard: View {
                     LiquidGlassSegmentedSelector(
                         selection: $monitor.menuMetric,
                         options: PowerMetric.allCases.map {
-                            LiquidGlassSegment(value: $0, title: $0.title)
+                            LiquidGlassSegment(value: $0, title: ChipBarLocale.localized($0.title))
                         },
                         accessibilityLabel: "菜单栏功率指标"
                     )
@@ -604,7 +604,7 @@ struct Dashboard: View {
                         .font(.subheadline.weight(.semibold))
                     Spacer()
                     Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-                         as? String ?? "开发版本")
+                         as? String ?? ChipBarLocale.choose("Development build", "开发版本"))
                         .font(.caption2).foregroundStyle(.secondary)
                     if updater.busy { ProgressView().controlSize(.small) }
                     Button("检查更新") { updater.check() }
@@ -612,7 +612,7 @@ struct Dashboard: View {
                         .disabled(updater.busy)
                 }
                 if updater.busy || updater.availableVersion != nil ||
-                    updater.status != "检查是否有可用的新版本。" {
+                    updater.status != ChipBarLocale.choose("Check for available updates.", "检查是否有可用的新版本。") {
                     Text(updater.status)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -622,7 +622,7 @@ struct Dashboard: View {
                     Button {
                         updater.install()
                     } label: {
-                        Label("下载并安装 ChipBar \(version)", systemImage: "arrow.down.app")
+                        Label(ChipBarLocale.choose("Download and install ChipBar \(version)", "下载并安装 ChipBar \(version)"), systemImage: "arrow.down.app")
                     }
                     .font(.caption.weight(.medium))
                     .disabled(updater.busy)
@@ -651,7 +651,7 @@ struct Dashboard: View {
                 Image(systemName: menuIcon(item))
                     .font(.system(size: 11))
                     .frame(width: 13)
-                Text(menuTitle(item))
+                Text(ChipBarLocale.localized(menuTitle(item)))
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -669,7 +669,7 @@ struct Dashboard: View {
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(ChipBarPressStyle())
-        .accessibilityLabel(item.title)
+        .accessibilityLabel(ChipBarLocale.localized(item.title))
         .accessibilityValue(enabled ? "已显示" : "未显示")
     }
 
