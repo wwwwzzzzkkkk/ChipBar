@@ -1,5 +1,21 @@
-# ChipBar Cluster Monitor v3.6.2
+# ChipBar Cluster Monitor · v4.0.0
 
+> Read-only local network monitoring. ChipBar cannot start, stop, execute, cancel or schedule OpenFAST simulations. Computations remain controlled by the user or external tools.
+
+## v4.0.0 connection states
+
+| English status | 中文状态 | Meaning |
+| --- | --- | --- |
+| Pair another Mac | 等待设备配对 | No trusted peer has been confirmed |
+| Sharing disabled | 未开启共享 | Sharing is explicitly switched off |
+| Searching for Macs | 正在搜索附近的 Mac | Discovery active, no nearby peer yet |
+| Waiting for telemetry | 等待远端数据 | A peer is present; valid approved telemetry is pending |
+| Connected | 已连接 | Authenticated remote measurements are fresh |
+| Peer offline | 设备离线 | A previously monitored peer stopped reporting valid measurements |
+
+Offline and waiting nodes no longer display stale readings as live values. A local macmon source without a valid sample shows a waiting state rather than a false green online badge.
+
+---
 ChipBar 3.6 introduces **opt-in, read-only LAN monitoring**. It does **not**
 start, stop, cancel, schedule, execute, or otherwise control simulations.
 Users and external tools such as GPT/Codex retain full control of computations.
