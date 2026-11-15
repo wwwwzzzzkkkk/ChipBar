@@ -29,6 +29,13 @@ jobs:
         run: ./scripts/test.sh
       - name: Build arm64 app
         run: ./scripts/build.sh
+      - name: Verify packaged English and Simplified Chinese resources
+        run: |
+          plutil -lint Resources/en.lproj/Localizable.strings
+          plutil -lint Resources/zh-Hans.lproj/Localizable.strings
+          test -s dist/ChipBar.app/Contents/Resources/en.lproj/Localizable.strings
+          test -s dist/ChipBar.app/Contents/Resources/zh-Hans.lproj/Localizable.strings
+          test "$(plutil -extract CFBundleDevelopmentRegion raw dist/ChipBar.app/Contents/Info.plist)" = en
       - name: Build host-native test binary
         run: swift build --build-system native -c release --arch x86_64
       - name: Subprocess fault checks
