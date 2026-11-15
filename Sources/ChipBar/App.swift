@@ -162,7 +162,7 @@ import ChipBarCore
         if args.contains("--diagnose-ssd") { diagnoseSSD(args); return }
         if args.contains("--diagnose") { diagnose(args); return }
         if let index = args.firstIndex(of: "--snapshot"), args.count > index + 1 {
-            snapshot(path: args[index + 1], settings: args.contains("--settings"), light: args.contains("--light")); return
+            snapshot(path: args[index + 1], settings: args.contains("--settings"), light: args.contains("--light"), cluster: args.contains("--cluster")); return
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -223,7 +223,7 @@ import ChipBarCore
     }
 
     /// Native SwiftUI rendering with live data; used for visual QA without screen permissions.
-    @MainActor static func snapshot(path: String, settings: Bool, light: Bool) {
+    @MainActor static func snapshot(path: String, settings: Bool, light: Bool, cluster: Bool = false) {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         let qaDefaults = UserDefaults(suiteName: "local.chipbar.ssd-snapshot-\(UUID().uuidString)")!
@@ -237,12 +237,22 @@ import ChipBarCore
         let monitor = Monitor(start: fixture == nil, ssdDefaults: qaDefaults, initialSample: fixture)
         if fixture != nil { monitor.network.setPaused(false) }
         AppDelegate.monitor = monitor
-        let content = NSHostingView(rootView: Dashboard(monitor: monitor, showSettings: settings)
+        if cluster {
+            ClusterMonitorService.shared.attach(monitor: monitor)
+            ClusterMonitorService.shared.setPanelVisible(true)
+        }
+        // Native SwiftUI rendering of the real application. Unlike a
+        // design mock-up, this captures the running view with actual
+        // sensors (or an explicitly supplied QA fixture).
+        let page: AnyView = cluster
+            ? AnyView(ClusterMonitorPanel(monitor: monitor, close: {}))
+            : AnyView(Dashboard(monitor: monitor, showSettings: settings))
+        let content = NSHostingView(rootView: page
             .background(Color(nsColor: .windowBackgroundColor))
             .environment(\.colorScheme, light ? .light : .dark))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 390, height: 650),
                               styleMask: [.titled], backing: .buffered, defer: false)
-        window.title = "ChipBar · 实时预览"
+        window.title = ChipBarLocale.choose("ChipBar · Live preview", "ChipBar · 实时预览")
         window.appearance = NSAppearance(named: light ? .aqua : .darkAqua)
         window.contentView = content
         window.center(); window.makeKeyAndOrderFront(nil)
