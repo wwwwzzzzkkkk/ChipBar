@@ -15,13 +15,14 @@ public struct DiskRates: Sendable {
 }
 
 /// One baseline per connected physical disk. A replaced disk or counter reset starts over.
+/// Allow scheduling tolerance around the selectable 10-second menu interval.
 public struct DiskRateAccumulator: Sendable {
     private var previous: [String: DiskCounters] = [:]
     private var previousTime: Double?
     public init() {}
     public mutating func update(_ counters: [String: DiskCounters], time: Double) -> [String: DiskRates] {
         defer { previous = counters; previousTime = time }
-        guard let before = previousTime, time.isFinite, time > before, time - before <= 10 else { return [:] }
+        guard let before = previousTime, time.isFinite, time > before, time - before <= 15 else { return [:] }
         let seconds = time - before
         var result: [String: DiskRates] = [:]
         for (id, current) in counters {

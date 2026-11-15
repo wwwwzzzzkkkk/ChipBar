@@ -8,6 +8,20 @@ public enum PowerMetric: String, CaseIterable, Identifiable {
     }
 }
 
+public struct FanReading: Identifiable {
+    public let id: String
+    public let rpm: Double
+}
+
+public struct MemoryReading: Equatable {
+    public let usedBytes: UInt64
+    public let totalBytes: UInt64
+
+    public var usedGiB: Double { Double(usedBytes) / 1_073_741_824 }
+    public var totalGiB: Double { Double(totalBytes) / 1_073_741_824 }
+    public var usedPercent: Double { Double(usedBytes) / Double(totalBytes) * 100 }
+}
+
 /// macmon pipe emits one JSON object per line; unknown fields are deliberately ignored.
 public struct Sample: Identifiable {
     public let id = UUID()
@@ -18,6 +32,10 @@ public struct Sample: Identifiable {
     public let total: Double?
     public let cpuTemperature: Double?
     public let gpuTemperature: Double?
+    public let cpuUtilization: Double?
+    public let gpuUtilization: Double?
+    public let fans: [FanReading]
+    public let memory: MemoryReading?
     public let chip: String?
     public let model: String?
     public var derivedTotal: Bool
@@ -49,12 +67,38 @@ public struct Sample: Identifiable {
         let temp = object["temp"] as? [String: Any] ?? [:]
         let cpuTemp = number(temp["cpu_temp_avg"], temperature: true)
         let gpuTemp = number(temp["gpu_temp_avg"], temperature: true)
-        guard cpu != nil || gpu != nil || reported != nil || ane != nil || cpuTemp != nil || gpuTemp != nil else {
+        func utilization(_ key: String) -> Double? {
+            guard let ratio = number(object[key]), ratio <= 1 else { return nil }
+            return ratio * 100
+        }
+        var fanNames = Set<String>()
+        let fans = (object["fans"] as? [[String: Any]] ?? []).compactMap { fan -> FanReading? in
+            guard let name = fan["name"] as? String, !name.isEmpty,
+                  let rpm = number(fan["rpm"]), rpm <= 30_000,
+                  fanNames.insert(name).inserted else { return nil }
+            return FanReading(id: name, rpm: rpm)
+        }
+        let memoryObject = object["memory"] as? [String: Any] ?? [:]
+        func byteCount(_ value: Any?) -> UInt64? {
+            guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(),
+                  n.doubleValue.isFinite, n.doubleValue >= 0, n.doubleValue <= Double(UInt64.max) else { return nil }
+            return n.uint64Value
+        }
+        let ramTotal = byteCount(memoryObject["ram_total"])
+        let ramUsed = byteCount(memoryObject["ram_usage"])
+        let memory: MemoryReading?
+        if let ramTotal, ramTotal > 0, let ramUsed, ramUsed <= ramTotal {
+            memory = MemoryReading(usedBytes: ramUsed, totalBytes: ramTotal)
+        } else {
+            memory = nil
+        }
+        guard cpu != nil || gpu != nil || reported != nil || ane != nil || cpuTemp != nil || gpuTemp != nil || memory != nil else {
             throw ParseError.notMetrics
         }
         let soc = object["soc"] as? [String: Any]
         return Sample(date: receivedAt, cpu: cpu, gpu: gpu, ane: ane,
                       total: reported ?? summed, cpuTemperature: cpuTemp, gpuTemperature: gpuTemp,
+                      cpuUtilization: utilization("cpu_active_ratio"), gpuUtilization: utilization("gpu_active_ratio"), fans: fans, memory: memory,
                       chip: soc?["chip_name"] as? String, model: soc?["mac_model"] as? String,
                       derivedTotal: reported == nil && summed != nil)
     }

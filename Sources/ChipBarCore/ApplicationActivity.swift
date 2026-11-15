@@ -1,5 +1,13 @@
 import Foundation
 
+public enum ApplicationActivityCachePolicy {
+    public static let lifetime: TimeInterval = 10
+
+    public static func isFresh(sampledAt: TimeInterval, now: TimeInterval) -> Bool {
+        now >= sampledAt && now - sampledAt <= lifetime
+    }
+}
+
 public struct ActivityProcess: Sendable {
     public let pid: Int32
     public let birth: UInt64
@@ -8,10 +16,15 @@ public struct ActivityProcess: Sendable {
     public let appPath: String?
     public let cpuSeconds: Double?
     public let neuralBytes: UInt64?
+    public let physicalBytes: UInt64?
+    public let memoryIsRSSApproximation: Bool
     public init(pid: Int32, birth: UInt64, group: String, name: String, appPath: String? = nil,
-                cpuSeconds: Double?, neuralBytes: UInt64? = nil) {
+                cpuSeconds: Double?, neuralBytes: UInt64? = nil, physicalBytes: UInt64? = nil,
+                memoryIsRSSApproximation: Bool = false) {
         self.pid = pid; self.birth = birth; self.group = group; self.name = name
         self.appPath = appPath; self.cpuSeconds = cpuSeconds; self.neuralBytes = neuralBytes
+        self.physicalBytes = physicalBytes
+        self.memoryIsRSSApproximation = memoryIsRSSApproximation
     }
 }
 
@@ -31,7 +44,36 @@ public struct ApplicationActivityRow: Identifiable, Sendable {
     public var cpuPercent: Double?
     public var gpuPercent: Double?
     public var neuralBytes: UInt64?
+    /// Sum of the readable processes' physical footprints, in bytes.
+    public var physicalBytes: UInt64?
+    public var memoryIsRSSApproximation: Bool
     public var processCount: Int
+}
+
+/// Single source of truth for the Memory tab and CLI diagnostic output.
+/// Discard readings that are too small to represent a valid resident process
+/// rather than rendering misleading "0.0 KB" on a machine with visible apps.
+public enum ApplicationMemoryDisplay {
+    public static let minimumDisplayBytes: UInt64 = 64 * 1024
+
+    public static func validatedBytes(_ bytes: UInt64?) -> UInt64? {
+        guard let bytes, bytes >= minimumDisplayBytes else { return nil }
+        return bytes
+    }
+
+    public static func text(bytes: UInt64?, approximate: Bool) -> String {
+        guard let bytes = validatedBytes(bytes) else { return "—" }
+        let number = Double(bytes)
+        let value: String
+        if bytes >= 1_000_000_000 {
+            value = String(format: "%.2f GB", number / 1_000_000_000)
+        } else if bytes >= 1_000_000 {
+            value = String(format: "%.1f MB", number / 1_000_000)
+        } else {
+            value = String(format: "%.1f KB", number / 1_000)
+        }
+        return approximate ? "≈" + value : value
+    }
 }
 
 /// Only current process/client baselines are retained. Missing data stays nil.
@@ -69,13 +111,20 @@ public struct ActivityAccumulator: Sendable {
                 nextCPU[process.pid] = CPU(birth: process.birth, seconds: seconds, time: time)
             }
             var row = rows[process.group] ?? ApplicationActivityRow(id: process.group, name: process.name,
-                appPath: process.appPath, cpuPercent: nil, gpuPercent: nil, neuralBytes: nil, processCount: 0)
+                appPath: process.appPath, cpuPercent: nil, gpuPercent: nil, neuralBytes: nil,
+                physicalBytes: nil, memoryIsRSSApproximation: false, processCount: 0)
             row.processCount += 1
             if let cpuRate { row.cpuPercent = (row.cpuPercent ?? 0) + cpuRate }
             if let rate = gpuRates[process.pid] { row.gpuPercent = (row.gpuPercent ?? 0) + rate }
             if let bytes = process.neuralBytes {
                 let (total, overflow) = (row.neuralBytes ?? 0).addingReportingOverflow(bytes)
                 row.neuralBytes = overflow ? UInt64.max : total
+            }
+            // Zero isn't a useful memory reading; keep unavailable data as nil.
+            if let bytes = process.physicalBytes, bytes > 0 {
+                let (total, overflow) = (row.physicalBytes ?? 0).addingReportingOverflow(bytes)
+                row.physicalBytes = overflow ? UInt64.max : total
+                row.memoryIsRSSApproximation = row.memoryIsRSSApproximation || process.memoryIsRSSApproximation
             }
             rows[process.group] = row
         }

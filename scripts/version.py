@@ -16,7 +16,10 @@ import zipfile
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO = "wwwwzzzzkkkk/ChipBar"
+GIT_ROOT = ROOT.parents[1]
+REPO = "wwwwzzzzkkkk/macmon"
+RELEASE_BRANCH = "chipbar"
+TAG_PREFIX = "chipbar-v"
 ASSET = "ChipBar-macOS-arm64.zip"
 
 
@@ -86,6 +89,11 @@ def update_cask(text, version, digest):
     text, checksums = re.subn(r'^  sha256 "[^"]+"$', f'  sha256 "{digest}"', text, flags=re.MULTILINE)
     if versions != 1 or checksums != 1:
         raise ValueError("Cask 必须只有一个版本和一个校验值。")
+    text = re.sub(r'^  url "[^"]+"$',
+                  f'  url "https://github.com/{REPO}/releases/download/{TAG_PREFIX}#{{version}}/{ASSET}"',
+                  text, flags=re.MULTILINE)
+    text = re.sub(r'^  homepage "[^"]+"$', f'  homepage "https://github.com/{REPO}"',
+                  text, flags=re.MULTILINE)
     return text
 
 
@@ -99,16 +107,16 @@ def prepare(requested):
     # Publish committed changes only, preserving unrelated work and existing tags.
     if run("git", "status", "--porcelain", capture=True):
         raise ValueError("请先提交工作区的修改，再发版。")
-    if run("git", "branch", "--show-current", capture=True) != "main":
-        raise ValueError("请在 main 分支发版。")
+    if run("git", "branch", "--show-current", capture=True) != RELEASE_BRANCH:
+        raise ValueError("请在 chipbar 分支发版。")
     remote = run("git", "remote", "get-url", "origin", capture=True)
     if remote not in (f"https://github.com/{REPO}.git", f"git@github.com:{REPO}.git"):
         raise ValueError("origin 不是 ChipBar 发布仓库。")
-    run("git", "fetch", "origin", "main", "--tags")
-    if run("git", "rev-parse", "HEAD", capture=True) != run("git", "rev-parse", "origin/main", capture=True):
-        raise ValueError("请先同步并上传 main 分支，再发版。")
+    run("git", "fetch", "origin", RELEASE_BRANCH, "--tags")
+    if run("git", "rev-parse", "HEAD", capture=True) != run("git", "rev-parse", f"origin/{RELEASE_BRANCH}", capture=True):
+        raise ValueError("请先同步并上传 chipbar 分支，再发版。")
     version = next_version(current_version(), requested)
-    tag = f"v{version}"
+    tag = f"{TAG_PREFIX}{version}"
     if subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/tags/{tag}"], cwd=ROOT).returncode == 0:
         raise ValueError(f"标签 {tag} 已存在；不可覆盖旧版本。")
     log = ROOT / "CHANGELOG.md"
@@ -119,7 +127,7 @@ def prepare(requested):
     run("git", "commit", "-m", f"Release {tag}")
     run("git", "tag", "-a", tag, "-m", f"ChipBar {version}")
     # Both refs move together or neither does; never force-update published refs.
-    run("git", "push", "--atomic", "origin", "main", tag)
+    run("git", "push", "--atomic", "origin", RELEASE_BRANCH, tag)
     print(f"已提交 {tag}。GitHub Actions 将测试、打包、发布并更新 Homebrew。")
 
 
@@ -151,6 +159,20 @@ def validate_icon(app, metadata):
         raise ValueError("ICNS 图标缺少必要的显示尺寸。")
 
 
+def validate_widget(app, version):
+    widget = app / "Contents/PlugIns/ChipBarWidgets.appex"
+    executable = widget / "Contents/MacOS/ChipBarWidgets"
+    plist = widget / "Contents/Info.plist"
+    if not executable.is_file() or executable.stat().st_size == 0 or not plist.is_file():
+        raise ValueError("3.3.0 必须包含真正的 ChipBarWidgets.appex；拒绝发布只有 SwiftUI 磁贴的应用。")
+    with plist.open("rb") as stream:
+        metadata = plistlib.load(stream)
+    if (metadata.get("CFBundleIdentifier") != "local.chipbar.monitor.widgets"
+        or metadata.get("CFBundleVersion") != version
+        or metadata.get("NSExtension", {}).get("NSExtensionPointIdentifier") != "com.apple.widgetkit-extension"):
+        raise ValueError("ChipBarWidgets.appex 的 Bundle ID、版本或 WidgetKit 扩展点不正确。")
+
+
 def package():
     version = current_version()
     app = ROOT / "dist/ChipBar.app"
@@ -159,6 +181,7 @@ def package():
     if metadata.get("CFBundleShortVersionString") != version or metadata.get("CFBundleVersion") != version:
         raise ValueError("应用版本与 VERSION 不一致，请重新构建。")
     validate_icon(app, metadata)
+    validate_widget(app, version)
     path = ROOT / "dist" / ASSET
     # Preserve executable mode but omit Finder/File Provider metadata from the ZIP.
     with tempfile.TemporaryDirectory(prefix="chipbar-package-") as staging:
@@ -169,7 +192,8 @@ def package():
                 raise ValueError("应用 ZIP 完整性检查失败。")
         extracted = Path(staging) / "verify"
         run("ditto", "-x", "-k", str(archive), str(extracted))
-        run("codesign", "--verify", "--strict", str(extracted / "ChipBar.app"))
+        validate_widget(extracted / "ChipBar.app", version)
+        run("codesign", "--verify", "--deep", "--strict", str(extracted / "ChipBar.app"))
         path.write_bytes(archive.read_bytes())
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     (ROOT / "dist/SHA256SUMS").write_text(f"{digest}  {ASSET}\n")
@@ -178,7 +202,7 @@ def package():
 
 def publish():
     version = current_version()
-    tag = f"v{version}"
+    tag = f"{TAG_PREFIX}{version}"
     if declared_tag() != tag:
         raise ValueError("仅在与 VERSION 一致的 GitHub 标签发布任务中执行 publish。")
     asset = ROOT / "dist" / ASSET
@@ -194,7 +218,7 @@ def publish():
             stream.flush()
             run("gh", "release", "create", tag, str(asset), str(ROOT / "dist/SHA256SUMS"),
                 "--repo", REPO, "--verify-tag", "--title", f"ChipBar {version}",
-                "--notes-file", stream.name, "--generate-notes")
+                "--notes-file", stream.name)
     # Retry uses the immutable remote asset, never replacing an existing Release ZIP.
     release = json.loads(run("gh", "api", f"repos/{REPO}/releases/tags/{tag}", capture=True))
     if release["draft"] or release["prerelease"]:
@@ -205,9 +229,9 @@ def publish():
     digest = assets[0].get("digest", "").removeprefix("sha256:")
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("GitHub 未返回 Release 文件 SHA-256，停止更新 Homebrew。")
-    run("git", "fetch", "origin", "main")
-    run("git", "checkout", "-B", "main", "origin/main")
-    cask = ROOT / "Casks/chipbar.rb"
+    run("git", "fetch", "origin", RELEASE_BRANCH)
+    run("git", "checkout", "-B", RELEASE_BRANCH, f"origin/{RELEASE_BRANCH}")
+    cask = GIT_ROOT / "Casks/chipbar.rb"
     old = cask.read_text()
     old_version = re.search(r'^  version "([^"]+)"$', old, re.MULTILINE).group(1)
     if version_tuple(old_version) > version_tuple(version):
@@ -218,9 +242,9 @@ def publish():
         print("Homebrew 已同步，无需再次提交。")
         return
     cask.write_text(changed)
-    run("git", "add", "Casks/chipbar.rb")
+    run("git", "add", ":/Casks/chipbar.rb")
     run("git", "commit", "-m", f"Update Homebrew cask to {tag}")
-    run("git", "push", "origin", "main")
+    run("git", "push", "origin", RELEASE_BRANCH)
 
 
 def main():
@@ -236,9 +260,9 @@ def main():
         elif args.command == "package": package()
         elif args.command == "publish": publish()
         elif args.command == "check-tag":
-            if declared_tag() != f"v{current_version()}":
+            if declared_tag() != f"{TAG_PREFIX}{current_version()}":
                 raise ValueError("Git 标签与 VERSION 不一致。")
-            tagged = run("git", "rev-parse", f"refs/tags/v{current_version()}^{{commit}}", capture=True)
+            tagged = run("git", "rev-parse", f"refs/tags/{TAG_PREFIX}{current_version()}^{{commit}}", capture=True)
             if tagged != run("git", "rev-parse", "HEAD", capture=True):
                 raise ValueError("构建提交不属于声明的版本标签。")
     except (ValueError, subprocess.CalledProcessError, OSError) as error:

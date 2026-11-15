@@ -5,6 +5,20 @@ import ChipBarCore
 @MainActor final class ExternalSSDMonitor: ObservableObject {
     @Published var enabled: Bool { didSet { defaults.set(enabled, forKey: "ssdEnabled"); restart() } }
     @Published var showInMenu: Bool { didSet { defaults.set(showInMenu, forKey: "ssdMenu") } }
+    /// Master visibility is always editable, even when no external disk is mounted.
+    /// Per-drive preferences remain saved when temporarily switched off.
+    @Published var menuTemperaturesEnabled: Bool {
+        didSet {
+            defaults.set(menuTemperaturesEnabled, forKey: "ssdMenuGlobalEnabled")
+            if menuTemperaturesEnabled && !enabled { enabled = true }
+        }
+    }
+    @Published private(set) var menuDiskIDs: Set<String> {
+        didSet { defaults.set(Array(menuDiskIDs).sorted(), forKey: "ssdMenuDriveIDs") }
+    }
+    @Published private(set) var diskMenuConfigured: Bool {
+        didSet { defaults.set(diskMenuConfigured, forKey: "ssdMenuDriveConfigured") }
+    }
     @Published var useSudo: Bool { didSet { defaults.set(useSudo, forKey: "ssdSudo"); restart() } }
     @Published var deviceType: SMARTDeviceType { didSet { defaults.set(deviceType.rawValue, forKey: "ssdType"); restart() } }
     @Published private(set) var readings: [SSDReading] = []
@@ -31,6 +45,11 @@ import ChipBarCore
         self.defaults = defaults
         enabled = defaults.bool(forKey: "ssdEnabled")
         showInMenu = defaults.bool(forKey: "ssdMenu")
+        menuDiskIDs = Set(defaults.stringArray(forKey: "ssdMenuDriveIDs") ?? [])
+        diskMenuConfigured = defaults.bool(forKey: "ssdMenuDriveConfigured")
+        menuTemperaturesEnabled = (defaults.object(forKey: "ssdMenuGlobalEnabled") as? Bool)
+            ?? (defaults.bool(forKey: "ssdMenu") ||
+                !(defaults.stringArray(forKey: "ssdMenuDriveIDs") ?? []).isEmpty)
         useSudo = defaults.bool(forKey: "ssdSudo")
         deviceType = SMARTDeviceType(rawValue: defaults.string(forKey: "ssdType") ?? "") ?? .auto
         customPath = defaults.string(forKey: "smartctlPath") ?? ""
@@ -49,10 +68,70 @@ import ChipBarCore
         if start { restart() }
     }
 
+    /// Mirrors the other menu-bar visibility choices. When there is no
+    /// per-drive selection yet, turning the master item on must make the
+    /// legacy all-SSD menu readout visible instead of selecting an inert pill.
+    /// Explicit per-drive choices are never overwritten.
+    func setMenuTemperatureVisibility(_ visible: Bool) {
+        if visible && !diskMenuConfigured && !showInMenu {
+            showInMenu = true
+        }
+        menuTemperaturesEnabled = visible
+    }
+
+    var menuTemperature: Double? {
+        readings.compactMap { $0.temperature }.filter { $0.isFresh() }.compactMap(\.composite).max()
+    }
+
+    func showsTemperatureInMenu(for diskID: String) -> Bool {
+        menuTemperaturesEnabled && (diskMenuConfigured ? menuDiskIDs.contains(diskID) : showInMenu)
+    }
+
+    func setTemperatureInMenu(_ show: Bool, for diskID: String) {
+        guard ExternalDisk.validIdentifier(diskID) else { return }
+        if !diskMenuConfigured {
+            // Preserve the old global preference when first switching to
+            // per-drive controls; subsequently only explicit IDs are shown.
+            menuDiskIDs = showInMenu ? Set(readings.map(\.id)) : []
+            diskMenuConfigured = true
+            showInMenu = false
+        }
+        if show {
+            menuTemperaturesEnabled = true
+            menuDiskIDs.insert(diskID)
+            if !enabled { enabled = true }
+        } else {
+            menuDiskIDs.remove(diskID)
+        }
+    }
+
+    var selectedTemperatureReadouts: [MenuReadout] {
+        guard enabled, menuTemperaturesEnabled else { return [] }
+        if !diskMenuConfigured {
+            guard showInMenu else { return [] }
+            return [MenuReadout("ssd", menuTemperature.map {
+                String(format: "%.0f°C", $0)
+            } ?? "—", "SSD")]
+        }
+        return readings.filter { menuDiskIDs.contains($0.id) }.map { row in
+            let degrees = row.temperature.flatMap { $0.isFresh() ? $0.composite : nil }
+            return MenuReadout("ssd-\(row.id)",
+                               degrees.map { String(format: "%.0f°C", $0) } ?? "—",
+                               "SSD \(row.id)")
+        }
+    }
+
     var menuSuffix: String {
-        guard enabled, showInMenu else { return "" }
-        let hottest = readings.compactMap { $0.temperature }.filter { $0.isFresh() }.compactMap(\.composite).max()
-        return hottest.map { String(format: " · SSD %.0f°C", $0) } ?? " · SSD —"
+        guard enabled, menuTemperaturesEnabled else { return "" }
+        if !diskMenuConfigured {
+            guard showInMenu else { return "" }
+            return menuTemperature.map { String(format: " · SSD %.0f°C", $0) } ?? " · SSD —"
+        }
+        return readings.filter { menuDiskIDs.contains($0.id) }.map { row in
+            let degrees = row.temperature.flatMap { $0.isFresh() ? $0.composite : nil }
+            return " · \(row.name) " +
+                (degrees.map { String(format: "%.0f°C", $0) } ?? "—")
+        }.joined()
     }
 
     func setPaused(_ paused: Bool) { self.paused = paused; restart() }
