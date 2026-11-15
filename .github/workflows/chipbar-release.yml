@@ -54,6 +54,13 @@ jobs:
       # Re-run the 3.4.0 release after splitting complex SwiftUI ViewBuilders.
       - name: Build arm64 app
         run: ./scripts/build.sh
+      - name: Verify packaged English and Simplified Chinese resources
+        run: |
+          plutil -lint Resources/en.lproj/Localizable.strings
+          plutil -lint Resources/zh-Hans.lproj/Localizable.strings
+          test -s dist/ChipBar.app/Contents/Resources/en.lproj/Localizable.strings
+          test -s dist/ChipBar.app/Contents/Resources/zh-Hans.lproj/Localizable.strings
+          test "$(plutil -extract CFBundleDevelopmentRegion raw dist/ChipBar.app/Contents/Info.plist)" = en
       - name: Verify embedded macOS WidgetKit extension
         run: |
           WIDGET="dist/ChipBar.app/Contents/PlugIns/ChipBarWidgets.appex"
