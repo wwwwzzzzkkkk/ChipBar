@@ -4,9 +4,8 @@
 
 [English](README.md) · [最新版本](https://github.com/wwwwzzzzkkkk/ChipBar/releases/latest) · [更新记录](CHANGELOG.md) · [计算集群指南](docs/CLUSTER_MONITOR.md)
 
-<p align="center"><img src="docs/images/v4-dashboard.png" width="900" alt="ChipBar 4.0 原生 macOS 监控主界面"></p>
-
-*上图由真实运行的 macOS ChipBar 原生 SwiftUI 界面渲染，并非 AI 生成概念图。截图中展示的是实时传感器数据还是已录制的真实 macmon 样本，请查看 [截图来源说明](docs/images/CAPTURE.md)。*
+<p align="center"><a href="docs/images/user-dashboard.png"><img src="docs/images/user-dashboard.png" width="420" alt="ChipBar Apple M5 Pro 实机主界面"></a></p>
+<p align="center"><sub>真实运行界面 · 原始 848 × 1972 像素 · 点击查看原图</sub></p>
 
 ## 核心功能
 
@@ -14,21 +13,25 @@ ChipBar 提供芯片总功率与趋势、CPU/GPU 占用及功率、ANE 功率（
 
 传感器刷新间隔可选 **1 / 2 / 5 / 10 秒**。功率曲线目前保留约 10 分钟；**v4.0.0 不含长期 SQLite 历史和阈值通知**。若传感器无法提供数据，会显示不可用，不会伪造功率或仿真进度。
 
-## 高清真实运行截图
+## 真实高清运行截图
+
+以下五张均是开发者上传的 **ChipBar 实机截图原图**，不是 AI 效果图，也不是 CI 模拟截图。README 只限制页面显示宽度，不改变原始图片的像素；点击可打开完整清晰度。
+
+### 计算集群与电源监控
 
 <table>
-<tr>
-<td><img src="docs/images/v4-dashboard.png" width="620" alt="ChipBar 监控首页"></td>
-<td><img src="docs/images/v4-settings.png" width="620" alt="ChipBar 设置页"></td>
-</tr>
-<tr><td>实时监控主界面</td><td>设备与设置</td></tr>
+<tr><td width="50%" align="center" valign="top"><a href="docs/images/user-cluster.png"><img src="docs/images/user-cluster.png" width="430" alt="ChipBar 双机计算集群实机画面"></a></td><td width="50%" align="center" valign="top"><a href="docs/images/user-power.png"><img src="docs/images/user-power.png" width="430" alt="ChipBar 电源与 USB-C 实机画面"></a></td></tr>
+<tr><td align="center"><b>计算集群</b><br>两台 Mac 的只读性能监控。</td><td align="center"><b>电源与功率</b><br>桑基图功率流向与接口供电。</td></tr>
 </table>
 
-<p align="center"><img src="docs/images/v4-cluster.png" width="780" alt="ChipBar 计算集群窗口"></p>
+### 设备设置与 SSD
 
-<p align="center">计算集群监控窗口</p>
+<table>
+<tr><td width="50%" align="center" valign="top"><a href="docs/images/user-settings.png"><img src="docs/images/user-settings.png" width="390" alt="ChipBar 设备与设置实机画面"></a></td><td width="50%" align="center" valign="top"><a href="docs/images/user-ssd.png"><img src="docs/images/user-ssd.png" width="390" alt="ChipBar 外置 SSD 实机画面"></a></td></tr>
+<tr><td align="center"><b>设备与设置</b><br>硬件信息、采样间隔和菜单栏选项。</td><td align="center"><b>外接 SSD</b><br>可用容量、温度与读写速度。</td></tr>
+</table>
 
-图片直接由运行中的 ChipBar 应用原生截取，而非设计效果图或 AI 生成图。截图 CI 会验证实际像素尺寸。[查看来源、环境和数据记录](docs/images/CAPTURE.md)。CI 可能使用真实录制的 macmon 样本作展示，届时会明确标注，并不冒充即时实测数据。
+<p align="center"><sub>原始尺寸：主界面 848×1972 · 集群 848×794 · 电源 932×1372 · 设置 848×1304 · SSD 720×912</sub></p>
 
 ## 计算集群（只读）
 

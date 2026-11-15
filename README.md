@@ -9,11 +9,8 @@
   <a href="docs/CLUSTER_MONITOR.md">Cluster guide</a>
 </p>
 
-<p>
-  <img alt="ChipBar 4.0 native macOS performance dashboard" src="docs/images/v4-dashboard.png" width="900">
-</p>
-
-*An actual ChipBar SwiftUI screen rendered by the macOS app at high pixel density, **not an AI-generated concept**. Read the [screenshot provenance](docs/images/CAPTURE.md) to see whether the runner captured live hardware readings or a recorded macmon sample.*
+<p align="center"><a href="docs/images/user-dashboard.png"><img src="docs/images/user-dashboard.png" width="420" alt="ChipBar live Apple M5 Pro dashboard screenshot"></a></p>
+<p align="center"><sub>Actual Mac screenshot · 848 × 1972 native pixels · click to view the original</sub></p>
 
 ## What ChipBar monitors
 
@@ -31,24 +28,25 @@ ChipBar is a compact native menu-bar companion for Apple Silicon Macs. It uses S
 
 Sample intervals are configurable at **1, 2, 5 or 10 seconds** for macmon-backed metrics. The live power chart keeps approximately ten minutes in memory; this release **does not** provide persistent seven-day history or threshold notifications. Measurements may be unavailable on some chip/macOS combinations; unsupported values are not fabricated.
 
-## App screenshots
+## Real Mac screenshots
+
+These five images are **actual screenshots provided by the developer**, not AI-generated illustrations or CI fixtures. GitHub controls display width only. Click each image to open its original full-resolution PNG.
+
+### Compute Cluster & Power
 
 <table>
-  <tr>
-    <td width="52%"><img src="docs/images/v4-dashboard.png" alt="Native ChipBar performance dashboard" width="700"></td>
-    <td width="48%"><img src="docs/images/v4-settings.png" alt="Native ChipBar device and settings screen" width="620"></td>
-  </tr>
-  <tr>
-    <td><b>Performance dashboard</b> — chip power, CPU/GPU, memory, cores, fan, disk and power tiles.</td>
-    <td><b>Device &amp; Settings</b> — sampling cadence, menu-bar metrics and in-app updates.</td>
-  </tr>
+<tr><td width="50%" align="center" valign="top"><a href="docs/images/user-cluster.png"><img src="docs/images/user-cluster.png" width="430" alt="Real two-Mac cluster monitoring"></a></td><td width="50%" align="center" valign="top"><a href="docs/images/user-power.png"><img src="docs/images/user-power.png" width="430" alt="Real power Sankey chart and USB-C monitoring"></a></td></tr>
+<tr><td align="center"><b>Compute Cluster</b><br>Read-only dual-Mac telemetry, CPU/GPU, power and fans.</td><td align="center"><b>Power &amp; USB-C</b><br>Internal power flow and per-port activity.</td></tr>
 </table>
 
-<p align="center"><img src="docs/images/v4-cluster.png" width="780" alt="Native ChipBar Cluster panel with local monitoring and connection status"></p>
+### System & Storage
 
-<p align="center"><b>Compute Cluster</b> — connect trusted Macs, inspect live readings and monitor OpenFAST tasks without controlling them.</p>
+<table>
+<tr><td width="50%" align="center" valign="top"><a href="docs/images/user-settings.png"><img src="docs/images/user-settings.png" width="390" alt="Real ChipBar settings"></a></td><td width="50%" align="center" valign="top"><a href="docs/images/user-ssd.png"><img src="docs/images/user-ssd.png" width="390" alt="Real external NVMe SSD details"></a></td></tr>
+<tr><td align="center"><b>Device &amp; Settings</b><br>Hardware details, refresh rate and menu bar options.</td><td align="center"><b>External SSD</b><br>Capacity, temperature and live disk speeds.</td></tr>
+</table>
 
-**Authenticity and resolution:** These are PNG captures rendered directly from the running ChipBar macOS application, not generative illustrations. They are created and validated by the [native screenshot workflow](.github/workflows/v4-screenshots.yml). Their [capture record](docs/images/CAPTURE.md) identifies the runner and whether sensor readings were live or came from a *recorded real macmon QA sample*. A screenshot cannot guarantee identical sensor availability or window appearance on every Mac.
+<p align="center"><sub>Native dimensions: dashboard 848×1972 · cluster 848×794 · power 932×1372 · settings 848×1304 · SSD 720×912</sub></p>
 
 ## Compute Cluster · read-only by design
 
