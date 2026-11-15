@@ -9,6 +9,12 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp -X .build/arm64-apple-macosx/release/ChipBar "$APP/Contents/MacOS/ChipBar"
 ./scripts/icon.sh "$APP/Contents/Resources"
 cp -X Assets/PrivacyInfo.xcprivacy "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
+# Text/Label localization is resolved from the actual .app's main bundle.
+# Keep English and Simplified Chinese embedded in both local and CI builds.
+for locale in Resources/*.lproj; do
+  test -d "$locale" || continue
+  ditto --norsrc --noextattr "$locale" "$APP/Contents/Resources/$(basename "$locale")"
+done
 VERSION="$(python3 scripts/version.py show)"
 python3 - "$APP" "$VERSION" <<'PYINFO'
 import plistlib, sys
@@ -16,6 +22,8 @@ from pathlib import Path
 app, version = sys.argv[1:]
 metadata = {
     "CFBundleIdentifier": "local.chipbar.monitor",
+    "CFBundleDevelopmentRegion": "en",
+    "CFBundleLocalizations": ["en", "zh-Hans"],
     "CFBundleName": "ChipBar", "CFBundleDisplayName": "ChipBar",
     "CFBundleExecutable": "ChipBar", "CFBundlePackageType": "APPL",
     "CFBundleIconFile": "AppIcon.icns",
