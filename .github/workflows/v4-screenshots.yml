@@ -1,0 +1,76 @@
+name: Capture native ChipBar v4 Retina screenshots
+on:
+  push:
+    branches: [release/v4.0.0-standalone-en]
+    paths: [.github/workflows/v4-screenshots.yml]
+permissions:
+  contents: write
+jobs:
+  capture:
+    # Apple Silicon provides real macmon data when hardware telemetry is available.
+    runs-on: macos-15
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Confirm native Apple Silicon runner
+        run: |
+          sw_vers
+          uname -m
+          test "$(uname -m)" = arm64
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Install the existing macmon hardware sampling dependency
+        run: |
+          brew install macmon
+          /opt/homebrew/bin/macmon --help >/dev/null
+      - name: Build real app and WidgetKit extension
+        run: ./scripts/build.sh
+      - name: Capture native running UI from live telemetry when available
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/images
+          APP="dist/ChipBar.app/Contents/MacOS/ChipBar"
+          FIXTURE="Tests/ChipBarCoreTests/Fixtures/m1-pro.json"
+          SOURCE="live Apple Silicon telemetry from GitHub-hosted M-series Mac"
+          if ! "$APP" --snapshot "$PWD/docs/images/v4-dashboard.png"; then
+            SOURCE="recorded real M1 Pro macmon sample rendered by the running ChipBar app"
+            "$APP" --snapshot "$PWD/docs/images/v4-dashboard.png" --fixture "$FIXTURE"
+          fi
+          if [[ "$SOURCE" == "live Apple Silicon telemetry from GitHub-hosted M-series Mac" ]]; then
+            "$APP" --snapshot "$PWD/docs/images/v4-settings.png" --settings
+            "$APP" --snapshot "$PWD/docs/images/v4-cluster.png" --cluster
+          else
+            "$APP" --snapshot "$PWD/docs/images/v4-settings.png" --settings --fixture "$FIXTURE"
+            "$APP" --snapshot "$PWD/docs/images/v4-cluster.png" --cluster --fixture "$FIXTURE"
+          fi
+          python3 - "$SOURCE" <<'PY'
+          import pathlib, struct, sys, platform
+          source=sys.argv[1]
+          for image in sorted(pathlib.Path('docs/images').glob('v4-*.png')):
+              data=image.read_bytes()
+              assert data[:8] == bytes([137,80,78,71,13,10,26,10]), image
+              width,height=struct.unpack('>II', data[16:24])
+              assert width >= 700 and height >= 350 and len(data) > 30000, (image,width,height,len(data))
+              print('VERIFIED APP SCREENSHOT',image,width,height,len(data),source)
+          pathlib.Path('docs/images/CAPTURE.md').write_text(
+              '# Screenshot provenance\n\n'
+              'ChipBar 4.0.0 screenshots were captured from the running native SwiftUI app '
+              'on a macOS Apple Silicon GitHub Actions runner. They are not AI-generated images.\n\n'
+              'Telemetry: '+source+'\n\n'
+              'Capture command: `ChipBar --snapshot <output> [--settings|--cluster]`.\n'
+              'When hardware sensors are unavailable on CI, a recorded real M1 Pro macmon '
+              'sample is explicitly injected; this is a UI demonstration, not a live reading.\n'
+              'Operating system: '+platform.platform()+'\n'
+          )
+          PY
+      - name: Commit real app screenshots and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/images/v4-dashboard.png docs/images/v4-settings.png docs/images/v4-cluster.png docs/images/CAPTURE.md
+          git commit -m "docs: capture verified Retina screenshots from running ChipBar v4"
+          git push origin HEAD:release/v4.0.0-standalone-en
