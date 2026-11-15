@@ -3,6 +3,9 @@ on:
   push:
     branches: [release/v4.0.0-standalone-en]
     paths: [.github/workflows/v4-screenshots.yml]
+concurrency:
+  group: chipbar-v4-native-screenshots
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
@@ -73,4 +76,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/images/v4-dashboard.png docs/images/v4-settings.png docs/images/v4-cluster.png docs/images/CAPTURE.md
           git commit -m "docs: capture verified Retina screenshots from running ChipBar v4"
+          # A PR can receive newer commits while macOS capture is building.
+          # Rebase the screenshot-only commit onto its latest head.
+          git fetch origin release/v4.0.0-standalone-en
+          git rebase origin/release/v4.0.0-standalone-en
           git push origin HEAD:release/v4.0.0-standalone-en
