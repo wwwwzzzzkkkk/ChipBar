@@ -19,11 +19,11 @@ jobs:
               p=pathlib.Path(pic)
               if p.is_file():
                   b=p.read_bytes()
-                  if b.startswith(b'\\x89PNG\\r\\n\\x1a\\n'):
+                  if b[:8] == bytes([137,80,78,71,13,10,26,10]):
                       print('SCREENSHOT',pic,struct.unpack('>II',b[16:24]),'bytes',len(b))
           for file in sorted(pathlib.Path('Sources/ChipBar').glob('*.swift')):
               txt=file.read_text()
-              strings = sorted(set(m.group(0) for m in re.finditer(r'"[^"\\n]*[\\u3400-\\u9fff][^"\\n]*"',txt)))
+              strings = sorted(set(x for x in re.findall(r'"(?:\\\\.|[^"\\\\])*"',txt) if any('一' <= char <= '鿿' for char in x)))
               if strings:
                   print('FILE',file.name,'CHINESE_STRINGS',len(strings))
                   for s in strings[:90]:
