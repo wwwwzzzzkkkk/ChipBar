@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import SwiftUI
 import ChipBarCore
 
@@ -7,13 +8,31 @@ import ChipBarCore
     private var menuController: MenuController?
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        let fixtureIndex = args.firstIndex(of: "--fixture")
+        let fixture = args.contains("--menu-qa") ? fixtureIndex.flatMap { index -> Sample? in
+            guard args.count > index + 1, let data = try? Data(contentsOf: URL(fileURLWithPath: args[index + 1])) else { return nil }
+            return try? Sample.decode(data)
+        } : nil
+        if fixture != nil {
+            var options = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+            options["menuItems"] = MenuContent.allCases.map(\.rawValue)
+            UserDefaults.standard.setVolatileDomain(options, forName: UserDefaults.argumentDomain)
+        }
         let ssdQA = args.contains("--ssd") && (args.contains("--menu-qa") || args.contains("--menu-mouse-qa"))
         let qaDefaults = UserDefaults(suiteName: "local.chipbar.ssd-qa-\(UUID().uuidString)")!
-        qaDefaults.setVolatileDomain(["ssdEnabled": true, "ssdMenu": true], forName: UserDefaults.argumentDomain)
-        let monitor = Monitor(ssdDefaults: ssdQA ? qaDefaults : .standard)
+        var qaOptions = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        qaOptions["ssdEnabled"] = true; qaOptions["ssdMenu"] = true
+        qaDefaults.setVolatileDomain(qaOptions, forName: UserDefaults.argumentDomain)
+        let monitor = Monitor(start: fixture == nil, ssdDefaults: ssdQA ? qaDefaults : .standard, initialSample: fixture)
         Self.monitor = monitor
+        ClusterMonitorService.shared.attach(monitor: monitor)
         let controller = MenuController(monitor: monitor)
         menuController = controller
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleWidgetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL))
         if let index = args.firstIndex(of: "--menu-mouse-qa"), args.count > index + 1 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                 Task { @MainActor in await controller.verifyMouseClicks(directory: args[index + 1]) }
@@ -25,12 +44,51 @@ import ChipBarCore
             }
         }
     }
-    func applicationWillTerminate(_ notification: Notification) { Self.monitor?.stop(forQuit: true) }
+    /// Both the Launch Services callback and the classic get-URL Apple Event
+    /// are handled because ChipBar is an LSUIElement/menu-only macOS app.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        urls.forEach { menuController?.openWidgetURL($0) }
+    }
+
+    @objc private func handleWidgetURLEvent(
+        _ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor
+    ) {
+        guard let path = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
+              let url = URL(string: path) else { return }
+        menuController?.openWidgetURL(url)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Self.monitor?.stop(forQuit: true)
+    }
 }
 
 @main enum Launch {
     @MainActor static func main() {
         let args = CommandLine.arguments
+        if let index = args.firstIndex(of: ChipBarUpdateHelper.launchFlag) {
+            let status = ChipBarUpdateHelper.run(Array(args.dropFirst(index + 1)))
+            exit(status)
+        }
+        if args.contains("--diagnose-io") {
+            Task.detached(priority: .utility) {
+                let sampler = DiskActivitySampler()
+                var network = NetworkActivity()
+                let before = NetworkMonitor.counters()
+                _ = network.update(before ?? [:], at: ProcessInfo.processInfo.systemUptime)
+                _ = await sampler.sampleAll()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                let counters = NetworkMonitor.counters()
+                let rate = network.update(counters ?? [:], at: ProcessInfo.processInfo.systemUptime)
+                let disks = await sampler.sampleAll()
+                print("interfaces=\(counters?.keys.sorted().joined(separator: ",") ?? "unavailable") download=\(NetworkRate.text(rate?.download)) upload=\(NetworkRate.text(rate?.upload))")
+                for id in disks.connected.sorted() {
+                    print("\(id) read=\(disks.rates[id]?.readMB.description ?? "unavailable")MB/s write=\(disks.rates[id]?.writeMB.description ?? "unavailable")MB/s")
+                }
+                exit(counters == nil ? 1 : 0)
+            }
+            dispatchMain()
+        }
         if args.contains("--diagnose-apps") {
             Task.detached(priority: .utility) {
                 let sampler = ApplicationActivitySampler()
@@ -42,12 +100,38 @@ import ChipBarCore
                         .sorted { ($0[keyPath: key] ?? 0) > ($1[keyPath: key] ?? 0) }.prefix(5)
                         .map { ["name": $0.name, "percent": $0[keyPath: key]!, "processCount": $0.processCount] }
                 }
-                let report: [String: Any] = ["processCount": result.processCount, "readableCPUCount": result.readableCPUCount,
-                    "gpuClientCount": result.gpuClientCount, "neuralMemorySupported": result.neuralSupported,
-                    "cpu": rows(\.cpuPercent), "gpu": rows(\.gpuPercent),
+                let memory = result.rows
+                    .filter { ApplicationMemoryDisplay.validatedBytes($0.physicalBytes) != nil }
+                    .sorted { ($0.physicalBytes ?? 0) > ($1.physicalBytes ?? 0) }
+                    .prefix(10)
+                    .map { row -> [String: Any] in
+                        [
+                            "name": row.name,
+                            "rawBytes": row.physicalBytes ?? 0,
+                            "display": ApplicationMemoryDisplay.text(
+                                bytes: row.physicalBytes,
+                                approximate: row.memoryIsRSSApproximation),
+                            "source": row.memoryIsRSSApproximation ? "RSS approximation" : "physical footprint",
+                            "processCount": row.processCount
+                        ]
+                    }
+                let positive = result.rows.compactMap(\.physicalBytes).filter { $0 > 0 }
+                let report: [String: Any] = [
+                    "processCount": result.processCount,
+                    "readableCPUCount": result.readableCPUCount,
+                    "readableMemoryCount": result.readableMemoryCount,
+                    "approximateMemoryCount": result.approximateMemoryCount,
+                    "minRawGroupedMemoryBytes": positive.min() ?? 0,
+                    "maxRawGroupedMemoryBytes": positive.max() ?? 0,
+                    "memory": memory,
+                    "gpuClientCount": result.gpuClientCount,
+                    "neuralMemorySupported": result.neuralSupported,
+                    "cpu": rows(\.cpuPercent),
+                    "gpu": rows(\.gpuPercent),
                     "aneMemory": result.rows.filter { ($0.neuralBytes ?? 0) > 0 }
                         .sorted { ($0.neuralBytes ?? 0) > ($1.neuralBytes ?? 0) }.prefix(5)
-                        .map { ["name": $0.name, "bytes": $0.neuralBytes!, "processCount": $0.processCount] }]
+                        .map { ["name": $0.name, "bytes": $0.neuralBytes!, "processCount": $0.processCount] }
+                ]
                 do {
                     let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
                     print(String(decoding: data, as: UTF8.self))
@@ -144,7 +228,14 @@ import ChipBarCore
         app.setActivationPolicy(.accessory)
         let qaDefaults = UserDefaults(suiteName: "local.chipbar.ssd-snapshot-\(UUID().uuidString)")!
         if CommandLine.arguments.contains("--ssd") { qaDefaults.setVolatileDomain(["ssdEnabled": true], forName: UserDefaults.argumentDomain) }
-        let monitor = Monitor(ssdDefaults: qaDefaults)
+        let fixtureIndex = CommandLine.arguments.firstIndex(of: "--fixture")
+        let fixture = fixtureIndex.flatMap { index -> Sample? in
+            guard CommandLine.arguments.count > index + 1,
+                  let data = try? Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[index + 1])) else { return nil }
+            return try? Sample.decode(data)
+        }
+        let monitor = Monitor(start: fixture == nil, ssdDefaults: qaDefaults, initialSample: fixture)
+        if fixture != nil { monitor.network.setPaused(false) }
         AppDelegate.monitor = monitor
         let content = NSHostingView(rootView: Dashboard(monitor: monitor, showSettings: settings)
             .background(Color(nsColor: .windowBackgroundColor))

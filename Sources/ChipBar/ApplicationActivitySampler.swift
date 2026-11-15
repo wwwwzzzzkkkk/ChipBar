@@ -5,11 +5,69 @@ import IOKit
 import ChipBarCore
 
 struct ActivitySnapshot: Sendable {
+    let sampledAt: TimeInterval
     let rows: [ApplicationActivityRow]
     let processCount: Int
     let readableCPUCount: Int
+    let readableMemoryCount: Int
+    let approximateMemoryCount: Int
     let gpuClientCount: Int
+    /// Whether IOKit GPU user-client counters were sampled this round.
+    let gpuSampled: Bool
     let neuralSupported: Bool
+}
+
+/// Keep GPU-tab changes responsive without rescanning the full registry on
+/// every CPU, memory or ANE update.
+enum ApplicationActivitySamplingPolicy {
+    static func needsRefresh(_ snapshot: ActivitySnapshot?, includeGPU: Bool,
+                             now: TimeInterval) -> Bool {
+        guard let snapshot else { return true }
+        return !ApplicationActivityCachePolicy.isFresh(sampledAt: snapshot.sampledAt, now: now)
+            || (includeGPU && !snapshot.gpuSampled)
+    }
+}
+
+/// Memory footprint is preferred (Activity Monitor-compatible), but on some
+/// macOS versions libproc reports a successful query with a zero footprint.
+/// A second V4 query, then a resident-size fallback, prevents false 0.0 MB.
+///
+/// RSS includes shared resident pages and is NOT identical to physical footprint.
+/// The fallback source propagates to the UI so it can be labelled as approximate.
+enum ProcessMemoryReader {
+    // A real macOS process footprint is page-backed. Some macOS releases
+    // return tiny positive placeholder values from libproc; treating 1 byte
+    // as valid bypassed RSS fallback and displayed "0.0 KB" for every app.
+    // Reject implausible sub-64 KiB values instead of representing them as usage.
+    static let minimumPlausibleBytes: UInt64 = 64 * 1024
+
+    static func isPlausible(_ bytes: UInt64?) -> Bool {
+        guard let bytes else { return false }
+        return bytes >= minimumPlausibleBytes
+    }
+
+    static func read(pid: Int32, initialFootprint: UInt64?) -> (bytes: UInt64?, approximate: Bool) {
+        if isPlausible(initialFootprint) { return (initialFootprint, false) }
+
+        var legacy = rusage_info_v4()
+        let legacyResult = withUnsafeMutablePointer(to: &legacy) {
+            proc_pid_rusage(pid, RUSAGE_INFO_V4,
+                UnsafeMutableRawPointer($0).assumingMemoryBound(to: rusage_info_t?.self))
+        }
+        if legacyResult == 0, isPlausible(legacy.ri_phys_footprint) {
+            return (legacy.ri_phys_footprint, false)
+        }
+
+        // RSS is a separate estimate and may differ from Activity Monitor's
+        // Physical Footprint. Mark its use as approximate in the ranking.
+        var task = proc_taskinfo()
+        let taskSize = Int32(MemoryLayout<proc_taskinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, taskSize) == taskSize,
+              isPlausible(task.pti_resident_size) else {
+            return (nil, false)
+        }
+        return (task.pti_resident_size, true)
+    }
 }
 
 /// Serial actor state. No process arguments, command output or history.
@@ -25,7 +83,7 @@ actor ApplicationActivitySampler {
         secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
     }
 
-    func sample() -> ActivitySnapshot {
+    func sample(includeGPU: Bool = true) -> ActivitySnapshot {
         autoreleasepool {
             let capacity = max(256, Int(proc_listallpids(nil, 0)) + 128)
             var pids = [Int32](repeating: 0, count: capacity)
@@ -33,6 +91,8 @@ actor ApplicationActivitySampler {
             var processes: [ActivityProcess] = []
             var nextMetadata: [Int32: (birth: UInt64, group: String, name: String, path: String?)] = [:]
             var readable = 0
+            var readableMemory = 0
+            var approximateMemory = 0
             var neuralSupported = false
             for pid in pids.prefix(max(0, min(Int(count), capacity))) where pid > 0 {
                 var bsd = proc_bsdinfo()
@@ -45,6 +105,7 @@ actor ApplicationActivitySampler {
                 nextMetadata[pid] = info
                 var cpu: Double?
                 var neural: UInt64?
+                var physical: UInt64?
                 if #available(macOS 15.0, *) {
                     var usage = rusage_info_v6()
                     let result = withUnsafeMutablePointer(to: &usage) {
@@ -53,30 +114,44 @@ actor ApplicationActivitySampler {
                     if result == 0 {
                         cpu = (Double(usage.ri_user_time) + Double(usage.ri_system_time)) * secondsPerTick
                         neural = usage.ri_neural_footprint
+                        physical = usage.ri_phys_footprint
                         neuralSupported = true
                     }
                 }
+                // Preserve the original CPU fallback, but do not confuse a
+                // successful query with a valid nonzero memory observation.
                 if cpu == nil {
                     var usage = rusage_info_v4()
                     let result = withUnsafeMutablePointer(to: &usage) {
-                        proc_pid_rusage(pid, RUSAGE_INFO_V4, UnsafeMutableRawPointer($0).assumingMemoryBound(to: rusage_info_t?.self))
+                        proc_pid_rusage(pid, RUSAGE_INFO_V4,
+                            UnsafeMutableRawPointer($0).assumingMemoryBound(to: rusage_info_t?.self))
                     }
-                    if result == 0 { cpu = (Double(usage.ri_user_time) + Double(usage.ri_system_time)) * secondsPerTick }
+                    if result == 0 {
+                        cpu = (Double(usage.ri_user_time) + Double(usage.ri_system_time)) * secondsPerTick
+                        physical = usage.ri_phys_footprint
+                    }
                 }
+                let memory = ProcessMemoryReader.read(pid: pid, initialFootprint: physical)
                 var verified = proc_bsdinfo()
                 guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &verified, Int32(MemoryLayout.size(ofValue: verified))) == MemoryLayout.size(ofValue: verified),
                       verified.pbi_start_tvsec == bsd.pbi_start_tvsec, verified.pbi_start_tvusec == bsd.pbi_start_tvusec else { continue }
                 if cpu != nil { readable += 1 }
+                if memory.bytes != nil { readableMemory += 1 }
+                if memory.approximate { approximateMemory += 1 }
                 processes.append(ActivityProcess(pid: pid, birth: birth, group: info.group, name: info.name,
-                    appPath: info.path, cpuSeconds: cpu, neuralBytes: neural))
+                    appPath: info.path, cpuSeconds: cpu, neuralBytes: neural, physicalBytes: memory.bytes,
+                    memoryIsRSSApproximation: memory.approximate))
             }
             metadata = nextMetadata
             let activePaths = Set(nextMetadata.values.compactMap(\.path))
             bundles = bundles.filter { activePaths.contains($0.key) }
-            let clients = readGPUClients()
-            let rows = accumulator.update(processes: processes, clients: clients, time: ProcessInfo.processInfo.systemUptime)
-            return ActivitySnapshot(rows: rows, processCount: processes.count, readableCPUCount: readable,
-                gpuClientCount: clients.count, neuralSupported: neuralSupported)
+            // A recursive IOKit walk is only needed for the GPU ranking.
+            let clients = includeGPU ? readGPUClients() : []
+            let sampledAt = ProcessInfo.processInfo.systemUptime
+            let rows = accumulator.update(processes: processes, clients: clients, time: sampledAt)
+            return ActivitySnapshot(sampledAt: sampledAt, rows: rows, processCount: processes.count, readableCPUCount: readable,
+                readableMemoryCount: readableMemory, approximateMemoryCount: approximateMemory,
+                gpuClientCount: clients.count, gpuSampled: includeGPU, neuralSupported: neuralSupported)
         }
     }
 
@@ -142,18 +217,44 @@ actor ApplicationActivitySampler {
 }
 
 @MainActor final class ApplicationActivityModel: ObservableObject {
+    static let shared = ApplicationActivityModel()
+
     @Published private(set) var snapshot: ActivitySnapshot?
     private let sampler = ApplicationActivitySampler()
+    private var inFlightSample: Task<ActivitySnapshot, Never>?
+    private var inFlightToken = UUID()
 
-    func watch(interval: Int) async {
-        snapshot = nil
+    func watch(interval: Int, includeGPU: Bool) async {
+        var sampleNext = ApplicationActivitySamplingPolicy.needsRefresh(
+            snapshot, includeGPU: includeGPU, now: ProcessInfo.processInfo.systemUptime)
         while !Task.isCancelled {
-            let sampler = self.sampler
-            let result = await Task.detached(priority: .utility) { await sampler.sample() }.value
-            guard !Task.isCancelled else { return }
-            snapshot = result
+            if sampleNext {
+                let result = await sampleOnce(includeGPU: includeGPU)
+                guard !Task.isCancelled else { return }
+                snapshot = result
+            }
+            sampleNext = true
             do { try await Task.sleep(nanoseconds: UInt64(max(2000, interval)) * 1_000_000) }
             catch { return }
         }
+    }
+
+    private func sampleOnce(includeGPU: Bool) async -> ActivitySnapshot {
+        if let inFlightSample {
+            let existing = await inFlightSample.value
+            // A GPU-tab switch may overlap a CPU-only scan; do not reuse
+            // incomplete GPU readings after the selector changes.
+            if !includeGPU || existing.gpuSampled { return existing }
+        }
+        let sampler = self.sampler
+        let token = UUID()
+        inFlightToken = token
+        let task = Task.detached(priority: .utility) {
+            await sampler.sample(includeGPU: includeGPU)
+        }
+        inFlightSample = task
+        let result = await task.value
+        if inFlightToken == token { inFlightSample = nil }
+        return result
     }
 }
