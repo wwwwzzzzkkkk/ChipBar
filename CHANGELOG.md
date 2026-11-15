@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-16
+
+- Make `wwwwzzzzkkkk/ChipBar` the standalone source and release repository, with root-level SwiftPM project, CI, GitHub Releases, Homebrew Cask and in-app updater targeting the new URL; no legacy update redirect.
+- Add English localization while preserving Simplified Chinese, covering the main dashboard, settings, pairing and monitoring states, side panels, accessibility and errors.
+- Distinguish cluster sharing disabled, discovering, awaiting samples, connected and offline; cluster remains strictly monitoring-only.
+- Publish an updated bilingual product README with genuine app screenshots and transparent release limitations.
+
+
 ## [3.6.6] - 2026-11-15
 
 - 修复计算集群打开和展开时整张侧边卡片上下跳动：将滚动文档固定为顶部坐标，首次展示前启动集群发现并完成真实布局；打开时锁定侧窗上沿，不再追随主菜单位置变化。

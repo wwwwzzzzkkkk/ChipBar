@@ -22,9 +22,9 @@ struct ChipBarUpdaterTests {
           "prerelease": false,
           "assets": [
             {"name": "ChipBar-macOS-arm64.zip", "size": 2492000,
-             "browser_download_url": "https://github.com/wwwwzzzzkkkk/macmon/releases/download/chipbar-v2.2.0/ChipBar-macOS-arm64.zip"},
+             "browser_download_url": "https://github.com/wwwwzzzzkkkk/ChipBar/releases/download/chipbar-v2.2.0/ChipBar-macOS-arm64.zip"},
             {"name": "SHA256SUMS", "size": 90,
-             "browser_download_url": "https://github.com/wwwwzzzzkkkk/macmon/releases/download/chipbar-v2.2.0/SHA256SUMS"}
+             "browser_download_url": "https://github.com/wwwwzzzzkkkk/ChipBar/releases/download/chipbar-v2.2.0/SHA256SUMS"}
           ]
         }
         """.data(using: .utf8)!

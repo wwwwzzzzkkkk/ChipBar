@@ -37,7 +37,7 @@ struct ChipBarUpdateRelease: Decodable {
     let prerelease: Bool
     let assets: [Asset]
 
-    static let repository = "wwwwzzzzkkkk/macmon"
+    static let repository = "wwwwzzzzkkkk/ChipBar"
     static let archiveName = "ChipBar-macOS-arm64.zip"
     static let checksumName = "SHA256SUMS"
 

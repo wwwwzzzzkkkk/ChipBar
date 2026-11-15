@@ -50,8 +50,8 @@ class VersionTests(unittest.TestCase):
                '"\n  url "https://github.com/wwwwzzzzkkkk/ChipBar/releases/download/v#{version}/ChipBar-macOS-arm64.zip"\n'
                '  homepage "https://github.com/wwwwzzzzkkkk/ChipBar"\nend\n')
         migrated = version.update_cask(old, '1.1.4', 'b' * 64)
-        self.assertIn('macmon/releases/download/chipbar-v#{version}/ChipBar-macOS-arm64.zip', migrated)
-        self.assertIn('homepage "https://github.com/wwwwzzzzkkkk/macmon"', migrated)
+        self.assertIn('ChipBar/releases/download/chipbar-v#{version}/ChipBar-macOS-arm64.zip', migrated)
+        self.assertIn('homepage "https://github.com/wwwwzzzzkkkk/ChipBar"', migrated)
         self.assertEqual(version.update_cask(migrated, '1.1.4', 'b' * 64), migrated)
 
     def test_dirty_worktree_stops_before_any_publish_changes(self):

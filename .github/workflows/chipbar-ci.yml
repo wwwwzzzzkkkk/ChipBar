@@ -1,0 +1,53 @@
+name: ChipBar CI
+on:
+  push:
+    branches: [main]
+    paths: ["Sources/**", "Tests/**", "scripts/**", "VERSION", "Casks/**", "WidgetExtension/**", "Package.swift", ".github/workflows/chipbar-*.yml"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    # ARM64-hosted runners may fail acquisition before running any steps.
+    # Build arm64 using the Intel host's Xcode cross-compiler, but run
+    # subprocess fault tests with an additional x86_64 binary on this host.
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select Xcode 26 and print runner diagnostics
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
+      - name: Version management tests
+        run: python3 -m unittest discover -s Tests/ReleaseTests -v
+      - name: Parser tests
+        run: ./scripts/test.sh
+      - name: Build arm64 app
+        run: ./scripts/build.sh
+      - name: Build host-native test binary
+        run: swift build --build-system native -c release --arch x86_64
+      - name: Subprocess fault checks
+        env:
+          CHIPBAR_DIAGNOSE_BINARY: .build/x86_64-apple-macosx/release/ChipBar
+        run: python3 scripts/integration.py
+      - name: Package and verify signature
+        run: python3 scripts/version.py package
+      # A GUI-hosted profile is best-effort: macOS runners may have no active
+      # WindowServer session. Never gate a valid signed release on GUI access.
+      - name: Compare panel-open and panel-closed CPU load (GUI, best effort)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: python3 scripts/ui_soak.py --seconds 72 --spacing-ms 1000 --cpu-compare --output dist/ui-profile.json
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ChipBar-arm64-${{ github.sha }}
+          path: |
+            dist/ChipBar-macOS-arm64.zip
+            dist/SHA256SUMS
+            dist/ui-profile.cpu.json
+          retention-days: 14

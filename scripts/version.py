@@ -16,9 +16,9 @@ import zipfile
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
-GIT_ROOT = ROOT.parents[1]
-REPO = "wwwwzzzzkkkk/macmon"
-RELEASE_BRANCH = "chipbar"
+GIT_ROOT = ROOT
+REPO = "wwwwzzzzkkkk/ChipBar"
+RELEASE_BRANCH = "main"
 TAG_PREFIX = "chipbar-v"
 ASSET = "ChipBar-macOS-arm64.zip"
 
@@ -108,7 +108,7 @@ def prepare(requested):
     if run("git", "status", "--porcelain", capture=True):
         raise ValueError("请先提交工作区的修改，再发版。")
     if run("git", "branch", "--show-current", capture=True) != RELEASE_BRANCH:
-        raise ValueError("请在 chipbar 分支发版。")
+        raise ValueError("请在 main 分支发版。")
     remote = run("git", "remote", "get-url", "origin", capture=True)
     if remote not in (f"https://github.com/{REPO}.git", f"git@github.com:{REPO}.git"):
         raise ValueError("origin 不是 ChipBar 发布仓库。")
