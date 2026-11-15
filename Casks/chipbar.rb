@@ -1,11 +1,11 @@
 cask "chipbar" do
-  version "3.6.6"
-  sha256 "935deccdfd59682cf85f4c517dcd5c2163a29b1c83f71a366b44e6f07a3f429e"
+  version "4.0.0"
+  sha256 "6c379b0a13bf92cf058587a67be40f3b986412dbf606eceb28ecfd560f13b72f"
 
   url "https://github.com/wwwwzzzzkkkk/ChipBar/releases/download/chipbar-v#{version}/ChipBar-macOS-arm64.zip"
   name "ChipBar"
   desc "Native Apple Silicon performance monitor with read-only Mac cluster"
-  homepage "https://github.com/wwwwzzzzkkkk/macmon"
+  homepage "https://github.com/wwwwzzzzkkkk/ChipBar"
 
   depends_on arch: :arm64
   depends_on macos: :ventura
