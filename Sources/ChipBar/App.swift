@@ -260,8 +260,21 @@ import ChipBarCore
             let size = content.fittingSize
             window.setContentSize(size)
             content.layoutSubtreeIfNeeded()
-            guard let bitmap = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { exit(1) }
-            content.cacheDisplay(in: content.bounds, to: bitmap)
+            // Offscreen macOS CI has a 1x backing scale. Allocate a genuine
+            // high-density AppKit bitmap and render the *native SwiftUI view*
+            // at 3 pixels per point instead of enlarging an existing PNG.
+            let drawingBounds = content.bounds
+            let scale: CGFloat = 3
+            guard let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(ceil(drawingBounds.width * scale)),
+                pixelsHigh: Int(ceil(drawingBounds.height * scale)),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0
+            ) else { exit(1) }
+            bitmap.size = drawingBounds.size
+            content.cacheDisplay(in: drawingBounds, to: bitmap)
             guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(1) }
             do { try png.write(to: URL(fileURLWithPath: path)) }
             catch { fputs(error.localizedDescription + "\n", stderr); exit(1) }
