@@ -97,7 +97,7 @@ private struct LiquidGlassTravel: GeometryEffect {
 private struct LiquidGlassSelectionDroplet: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    private let tint = Color(red: 0.30, green: 0.68, blue: 0.86)
+    private let tint = Color.primary
     private var rim: LinearGradient {
         LinearGradient(colors: [
             Color.white.opacity(0.75),
@@ -109,15 +109,15 @@ private struct LiquidGlassSelectionDroplet: View {
     @ViewBuilder var body: some View {
         if reduceTransparency {
             Capsule(style: .continuous)
-                .fill(tint.opacity(0.25))
+                .fill(tint.opacity(0.17))
                 .overlay {
                     Capsule(style: .continuous)
-                        .strokeBorder(tint.opacity(0.55), lineWidth: 1)
+                        .strokeBorder(tint.opacity(0.31), lineWidth: 1)
                 }
         } else if #available(macOS 26.0, *) {
             Capsule(style: .continuous)
                 .fill(Color.clear)
-                .glassEffect(.regular.tint(tint.opacity(0.22)).interactive(true),
+                .glassEffect(.regular.tint(tint.opacity(0.12)).interactive(true),
                              in: Capsule(style: .continuous))
                 .overlay {
                     Capsule(style: .continuous)
@@ -127,7 +127,7 @@ private struct LiquidGlassSelectionDroplet: View {
         } else {
             Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay { Capsule(style: .continuous).fill(tint.opacity(0.14)) }
+                .overlay { Capsule(style: .continuous).fill(tint.opacity(0.12)) }
                 .overlay {
                     Capsule(style: .continuous)
                         .strokeBorder(rim, lineWidth: 1)

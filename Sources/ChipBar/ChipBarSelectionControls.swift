@@ -1,10 +1,10 @@
 import SwiftUI
 import ChipBarCore
 
-/// One cyan-blue active state shared by menu items, toggles and selectors.
-/// Selection animations preserve each control's intrinsic size.
+/// Monochrome selection chrome adapts to the appearance. Metric chart colors
+/// stay semantic and independent of these controls.
 enum ChipBarControlTint {
-    static let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
+    static let accent = Color.primary
 }
 struct ChipBarMiniSwitch: View {
     let enabled: Bool
@@ -19,15 +19,15 @@ struct ChipBarMiniSwitch: View {
 
     var body: some View {
         Capsule()
-            .fill(enabled ? ChipBarControlTint.accent.opacity(0.65) : Color.primary.opacity(0.075))
+            .fill(enabled ? Color.primary.opacity(0.34) : Color.primary.opacity(0.075))
             .overlay {
                 Capsule()
-                    .strokeBorder(enabled ? ChipBarControlTint.accent.opacity(0.75) : Color.primary.opacity(0.11),
+                    .strokeBorder(enabled ? Color.primary.opacity(0.36) : Color.primary.opacity(0.11),
                                   lineWidth: 0.8)
             }
             .overlay {
                 Circle()
-                    .fill(enabled ? Color.white : Color.secondary.opacity(0.66))
+                    .fill(enabled ? Color(nsColor: .windowBackgroundColor) : Color.secondary.opacity(0.66))
                     .frame(width: thumbSize, height: thumbSize)
                     .offset(x: enabled ? thumbTravel : -thumbTravel)
                     .animation(ChipBarMotion.optional(ChipBarMotion.selection,
@@ -61,11 +61,11 @@ struct ChipBarGlassToggleStyle: ToggleStyle {
             }
             .padding(.horizontal, 11)
             .frame(height: 39)
-            .background(configuration.isOn ? ChipBarControlTint.accent.opacity(0.16) : Color.primary.opacity(0.035),
+            .background(configuration.isOn ? Color.primary.opacity(0.12) : Color.primary.opacity(0.035),
                         in: RoundedRectangle(cornerRadius: 10))
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(configuration.isOn ? ChipBarControlTint.accent.opacity(0.55) : Color.primary.opacity(0.07),
+                    .strokeBorder(configuration.isOn ? Color.primary.opacity(0.26) : Color.primary.opacity(0.07),
                                   lineWidth: configuration.isOn ? 1 : 0.7)
             }
             .contentShape(RoundedRectangle(cornerRadius: 10))
@@ -109,10 +109,10 @@ struct ChipBarPowerSelection: View {
                             .background {
                                 if selected {
                                     RoundedRectangle(cornerRadius: 8)
-                                        .fill(ChipBarControlTint.accent.opacity(0.17))
+                                        .fill(Color.primary.opacity(0.16))
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 8)
-                                                .strokeBorder(ChipBarControlTint.accent.opacity(0.45),
+                                                .strokeBorder(Color.primary.opacity(0.28),
                                                               lineWidth: 0.5)
                                         }
                                         .matchedGeometryEffect(id: "power-selected", in: highlight)
