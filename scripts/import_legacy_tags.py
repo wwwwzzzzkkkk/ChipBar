@@ -66,11 +66,23 @@ def create_tag(tag, sha):
     })
 
 
+def peel_to_commit(original_sha, kind):
+    """Annotated tags point to a Git *tag object*, not directly to a commit."""
+    for _ in range(5):
+        if kind == "commit":
+            return original_sha
+        if kind != "tag":
+            raise RuntimeError(f"Unexpected source tag object type: {kind}")
+        annotation = api(f"repos/{SOURCE}/git/tags/{original_sha}")
+        kind = annotation["object"]["type"]
+        original_sha = annotation["object"]["sha"]
+    raise RuntimeError("Historical tag is nested too deeply")
+
+
 def import_tags():
     direct = pointers = existing = 0
-    for tag, original_sha, kind in old_tag_refs():
-        if kind != "commit":
-            raise RuntimeError(f"{tag}: unexpected source object type {kind}")
+    for tag, ref_sha, kind in old_tag_refs():
+        original_sha = peel_to_commit(ref_sha, kind)
         found = api(f"repos/{TARGET}/git/ref/tags/{tag}", missing_ok=True)
         if found is not None:
             # Idempotent: never change a pre-existing version tag.
