@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import QuartzCore
 import Combine
 
 @MainActor private final class ChipBarSideWindow: NSPanel {
@@ -289,37 +288,19 @@ import Combine
         if openedKind == .cluster {
             ClusterMonitorService.shared.setPanelVisible(false)
         }
+        // A native NSPanel fade remains in-flight after an immediate reopen:
+        // its old animator can overwrite the new alpha and flash the glass.
+        // Hiding/unmounting in one transaction makes rapid switching stable.
         transition = UUID()
         openedKind = nil
         clusterFitTask?.cancel()
         clusterFitTask = nil
         measuredClusterContentHeight = 0
         resetClusterScrollOnFit = false
-        clusterDisclosureAnimationDeadline = 0
         clusterViewportPinned = false
+        clusterDisclosureAnimationDeadline = 0
         clusterAnchoredTop = nil
-        let token = transition
-        guard panel.isVisible else {
-            host.rootView = AnyView(EmptyView())
-            return
-        }
-        let complete: () -> Void = { [weak self] in
-            guard let self, self.transition == token else { return }
-            self.panel.orderOut(nil)
-            // Cancel on-demand process and power sampling by unmounting.
-            self.host.rootView = AnyView(EmptyView())
-        }
-        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            panel.alphaValue = 0
-            complete()
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().alphaValue = 0
-        } completionHandler: {
-            Task { @MainActor in complete() }
-        }
+        panel.orderOut(nil)
+        host.rootView = AnyView(EmptyView())
     }
 }
