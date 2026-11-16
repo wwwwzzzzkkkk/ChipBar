@@ -223,39 +223,49 @@ import Combine
             }
             let width = SidePanelLayout.width(for: .cluster)
             let measured = self.measuredClusterContentHeight
-            // Fallback for the very first geometry pass only. No viewport
-            // reset, and no forced hard-coded maximum window height.
             let natural = measured > 0 ? measured : self.host.fittingSize.height
             let content = natural.isFinite && natural > 0
                 ? min(10_000, ceil(natural)) : SidePanelLayout.clusterHeight
-            let height = ClusterSidecarSizing.windowHeight(
-                content: content, available: visible.height)
             let old = self.panel.frame
-            // Lock the top edge captured at opening. Parent menu geometry
-            // can change while the selected tile re-renders, but it must not
-            // drag the Cluster window (or its content) upward.
-            let top = ClusterSidecarSizing.stableTop(
-                openedAt: self.clusterAnchoredTop ?? old.maxY,
-                visibleMaxY: visible.maxY)
-            let y = ClusterSidecarSizing.bottomY(
-                anchoredTop: top, height: height, visibleMinY: visible.minY)
-            // Document must be at least as tall as the viewport. If longer,
-            // NSScrollView can scroll; otherwise there is no empty padding.
+            let proposed = ClusterSidecarSizing.windowHeight(
+                content: content, available: visible.height)
+            let resizeWindow = ClusterSidecarSizing.shouldResizeWindow(
+                from: old.height, to: proposed, available: visible.height,
+                userDisclosurePinned: self.clusterViewportPinned)
+            let height = resizeWindow ? proposed : old.height
+            let clip = self.scrollView.contentView
+            let previousScrollY = clip.bounds.origin.y
+
+            // The scroll document expands to hold all real task rows. A user
+            // disclosure never resizes/repositions NSPanel: its scroll viewport
+            // stays fixed, so nothing under the pointer moves unexpectedly.
             self.host.setFrameSize(NSSize(width: width,
                                          height: max(content, height)))
-            // Overlay scrollbars only when the screen cannot show the full
-            // document. The glass tile width stays unchanged.
             self.scrollView.hasVerticalScroller = content > height + 2
-            let frame = NSRect(x: old.minX, y: y, width: width, height: height)
-            if abs(old.height - height) > 1 || abs(old.minY - y) > 1 {
+            if resizeWindow {
+                let top = ClusterSidecarSizing.stableTop(
+                    openedAt: self.clusterAnchoredTop ?? old.maxY,
+                    visibleMaxY: visible.maxY)
+                let y = ClusterSidecarSizing.bottomY(
+                    anchoredTop: top, height: height, visibleMinY: visible.minY)
+                let frame = NSRect(x: old.minX, y: y, width: width, height: height)
                 self.panel.setFrame(frame, display: true)
             }
-            // The flipped document itself keeps content at top (y=0).
-            // Do not issue an additional scroll(to:) for every geometry
-            // change; that was visibly shifting the whole card.
+            self.scrollView.layoutSubtreeIfNeeded()
             if self.resetClusterScrollOnFit {
                 self.scrollClusterToTop()
                 self.resetClusterScrollOnFit = false
+            } else {
+                // NSScrollView can relocate the clip origin when its document
+                // height changes. Restore the user's position, clamped only
+                // when collapsing makes the prior offset impossible.
+                let offset = ClusterSidecarSizing.preservedScrollOffset(
+                    previousScrollY, documentHeight: self.host.frame.height,
+                    viewportHeight: clip.bounds.height, isFlipped: self.host.isFlipped)
+                if abs(clip.bounds.origin.y - offset) > 0.5 {
+                    clip.scroll(to: NSPoint(x: 0, y: offset))
+                    self.scrollView.reflectScrolledClipView(clip)
+                }
             }
             self.clusterFitTask = nil
         }
