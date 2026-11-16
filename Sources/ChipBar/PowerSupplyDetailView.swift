@@ -96,11 +96,12 @@ struct PowerSankeyGeometry {
 
 /// The chart is drawn into a single Canvas. Its animated dashed lines are
 /// invalidated only while the side panel is actually mounted and active.
-private struct PowerSankeyFlow: View, Animatable {
+struct PowerSankeyFlow: View, Animatable {
     let distribution: PowerDistribution
     let externalWatts: Double?
     let sourceTitle: String
     let active: Bool
+    let internalTitle: String
 
     // These three values are interpolated by SwiftUI between one-second samples.
     // Canvas geometry and every displayed number use the SAME intermediate frame.
@@ -110,11 +111,12 @@ private struct PowerSankeyFlow: View, Animatable {
     private var animatedExternalWatts: Double
 
     init(distribution: PowerDistribution, externalWatts: Double?,
-         sourceTitle: String, active: Bool) {
+         sourceTitle: String, active: Bool, internalTitle: String = "内部功率") {
         self.distribution = distribution
         self.externalWatts = externalWatts
         self.sourceTitle = sourceTitle
         self.active = active
+        self.internalTitle = internalTitle
         animatedInternalWatts = distribution.internalWatts ?? 0
         animatedChipWatts = distribution.chipWatts ?? 0
         animatedExternalWatts = externalWatts ?? 0
@@ -161,7 +163,7 @@ private struct PowerSankeyFlow: View, Animatable {
 
     private var leftLabel: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("内部功率")
+            Text(ChipBarLocale.localized(internalTitle))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
@@ -174,15 +176,16 @@ private struct PowerSankeyFlow: View, Animatable {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            HStack(spacing: 3) {
-                Text(ChipBarLocale.localized(sourceTitle))
-                Text(value(externalWatts == nil ? nil : animatedExternalWatts))
+            if let externalWatts, !sourceTitle.isEmpty {
+                HStack(spacing: 3) {
+                    Text(ChipBarLocale.localized(sourceTitle))
+                    Text(value(externalWatts == 0 ? 0 : animatedExternalWatts))
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             }
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
-            .opacity(externalWatts == nil ? 0.48 : 1)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
         }
         .frame(width: 82, alignment: .leading)
     }

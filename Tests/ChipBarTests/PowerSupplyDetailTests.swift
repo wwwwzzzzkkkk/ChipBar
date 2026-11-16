@@ -56,6 +56,7 @@ struct PowerSupplyDetailTests {
         #expect(topology.chargeWatts == 20)
         #expect(topology.assistWatts == 0)
         #expect(topology.otherWatts == 30)
+        #expect(topology.hasBatteryTransfer)
         #expect(topology.sourceWatts == topology.systemWatts + topology.chargeWatts)
 
         let chart = LaptopSankeyGeometry.make(topology)
@@ -79,6 +80,7 @@ struct PowerSupplyDetailTests {
         #expect(battery.sourceWatts == 25)
         #expect(battery.chargeWatts == 0)
         #expect(battery.otherWatts == 15)
+        #expect(!battery.hasBatteryTransfer)
 
         let adapterOnly = ChipBarPowerReading(
             hasBattery: true, onAdapter: true, isCharging: false, batteryPercent: 80,
@@ -87,6 +89,7 @@ struct PowerSupplyDetailTests {
         let adapter = try #require(LaptopPowerTopology(reading: adapterOnly, chipWatts: 12))
         #expect(adapter.mode == .adapter)
         #expect(adapter.chargeWatts == 0)
+        #expect(!adapter.hasBatteryTransfer)
 
         let assisting = ChipBarPowerReading(
             hasBattery: true, onAdapter: true, isCharging: false, batteryPercent: 60,
@@ -97,10 +100,61 @@ struct PowerSupplyDetailTests {
         #expect(assisted.sourceWatts == 25)
         #expect(assisted.assistWatts == 15)
         #expect(assisted.chargeWatts == 0)
+        #expect(assisted.hasBatteryTransfer)
         #expect(assisted.sourceWatts + assisted.assistWatts == assisted.systemWatts)
         let chart = LaptopSankeyGeometry.make(assisted)
         #expect(abs(chart.systemHeight - chart.inputHeight - chart.assistHeight) < 0.001)
         #expect(chart.assistTop > chart.leftTop + chart.inputHeight)
+    }
+
+    @Test func batteryDirectPowerRailIsPreferredAndCurrentVoltageIsFallback() {
+        let direct = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 18.5, currentMilliAmps: 1000, voltageMilliVolts: 12000)
+        #expect(direct?.watts == 18.5)
+        #expect(direct?.source == "PPBR")
+
+        let fallback = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: nil, currentMilliAmps: -1500, voltageMilliVolts: 12000)
+        #expect(fallback?.watts == -18)
+        #expect(fallback?.source == "B0AC/B0AV")
+
+        let zeroDirect = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 0, currentMilliAmps: 1000, voltageMilliVolts: 12000)
+        #expect(zeroDirect?.watts == 12)
+        #expect(zeroDirect?.source == "B0AC/B0AV")
+
+        let zero = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 0, currentMilliAmps: 0, voltageMilliVolts: 12000)
+        #expect(zero?.watts == 0)
+
+        let unknown = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: nil, currentMilliAmps: nil, voltageMilliVolts: nil)
+        #expect(unknown?.watts == nil)
+    }
+
+    @Test func macbookZeroBatteryCurrentCollapsesToTwoStageAndPreservesStatus() throws {
+        let pluggedNoCharge = ChipBarPowerReading(
+            hasBattery: true, onAdapter: true, isCharging: false,
+            batteryPercent: 75, adapterWatts: 23.7, batteryWatts: 0,
+            systemWatts: 23.7, sourceLabel: "SMC", live: true)
+        let flow = try #require(LaptopPowerTopology(
+            reading: pluggedNoCharge, chipWatts: 7.8))
+        #expect(flow.mode == .adapter)
+        #expect(!flow.hasBatteryTransfer)
+        #expect(flow.chargeWatts == 0)
+        #expect(flow.systemWatts == 23.7)
+        #expect(abs(flow.otherWatts - 15.9) < 0.001)
+        #expect(flow.batteryPercent == 75)
+        #expect(!flow.batteryCharged)
+
+        var charged = pluggedNoCharge
+        charged.isCharged = true
+        let full = try #require(LaptopPowerTopology(reading: charged, chipWatts: 7.8))
+        #expect(full.batteryCharged)
+        #expect(!full.hasBatteryTransfer)
+        // Mac mini's existing Sankey remains independent of the battery path.
+        #expect(PowerSankeyGeometry.make(distribution:
+            PowerDistribution(internalWatts: 23.7, chipWatts: 7.8)) != nil)
     }
 
     @Test func laptopThreeStageRejectsMissingStaleAndContradictorySensorValues() {

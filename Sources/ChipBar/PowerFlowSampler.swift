@@ -17,6 +17,7 @@ struct ChipBarPowerReading: Equatable, Sendable {
     var live: Bool
     var sourceKey: String? = nil
     var usb: USBCPowerSnapshot = USBCPowerSnapshot()
+    var isCharged: Bool = false
 
     static let unavailable = ChipBarPowerReading(
         hasBattery: false, onAdapter: true, isCharging: false,
@@ -45,14 +46,14 @@ actor ChipBarPowerSampler {
 
         if let battery {
             let rawAdapter = smc?.double("PDTR")
-            let current = smc?.double("B0AC")
-            let voltage = smc?.double("B0AV")
-            let pack: Double? = {
-                guard let current, let voltage,
-                      current.isFinite, voltage.isFinite,
-                      abs(current) < 20_000, voltage > 1_000, voltage < 30_000 else { return nil }
-                return current * voltage / 1_000_000
-            }()
+            // PPBR directly reports battery pack watts on supported Macs.
+            // Use the B0AC/B0AV current-voltage product as a fallback; some
+            // models expose only one source. Never invent missing telemetry.
+            let packReading = Self.selectBatteryPower(
+                directWatts: smc?.double("PPBR"),
+                currentMilliAmps: smc?.double("B0AC"),
+                voltageMilliVolts: smc?.double("B0AV"))
+            let pack = packReading?.watts
             let input = Self.power(rawAdapter, allowZero: true)
             let adapter = battery.connected ? input : 0
             let batteryWatts = pack
@@ -73,9 +74,11 @@ actor ChipBarPowerSampler {
                 sourceLabel: available ? "SMC 实时采样 · 系统侧为功率差估算" : "传感器暂不可用",
                 live: available,
                 sourceKey: available
-                    ? (battery.connected ? "PDTR + B0AC/B0AV" : "B0AC/B0AV")
+                    ? (battery.connected ? "PDTR + \(packReading?.source ?? "battery")"
+                                         : packReading?.source)
                     : nil,
-                usb: usb
+                usb: usb,
+                isCharged: battery.charged
             )
         }
 
@@ -111,6 +114,36 @@ actor ChipBarPowerSampler {
         }
     }
 
+    /// Prefer the battery-pack power rail if present and active, but accept
+    /// current × voltage if the direct sensor is missing or only reports zero.
+    /// A real 0 W from either source remains 0 W (not nil).
+    static func selectBatteryPower(directWatts: Double?, currentMilliAmps: Double?,
+                                   voltageMilliVolts: Double?)
+        -> (watts: Double, source: String)? {
+        let direct: Double? = {
+            guard let value = directWatts, value.isFinite, abs(value) < 500
+            else { return nil }
+            return value
+        }()
+        let derived: Double? = {
+            guard let current = currentMilliAmps, let voltage = voltageMilliVolts,
+                  current.isFinite, voltage.isFinite,
+                  abs(current) < 20_000, voltage > 1_000, voltage < 30_000
+            else { return nil }
+            return current * voltage / 1_000_000
+        }()
+
+        if let direct, abs(direct) > 0.25 {
+            return (direct, "PPBR")
+        }
+        if let derived, abs(derived) > 0.25 {
+            return (derived, "B0AC/B0AV")
+        }
+        if let direct { return (direct, "PPBR") }
+        if let derived { return (derived, "B0AC/B0AV") }
+        return nil
+    }
+
     private static func power(_ value: Double?, allowZero: Bool) -> Double? {
         guard let value, value.isFinite,
               value < 500, (allowZero ? value >= 0 : value > 0) else { return nil }
@@ -121,6 +154,7 @@ actor ChipBarPowerSampler {
         var percent: Double?
         var connected: Bool
         var charging: Bool
+        var charged: Bool
     }
 
     private static func batteryState() -> BatteryState? {
@@ -138,7 +172,8 @@ actor ChipBarPowerSampler {
             return BatteryState(
                 percent: percent,
                 connected: (dict[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue,
-                charging: (dict[kIOPSIsChargingKey] as? Bool) ?? false
+                charging: (dict[kIOPSIsChargingKey] as? Bool) ?? false,
+                charged: (dict[kIOPSIsChargedKey] as? Bool) ?? false
             )
         }
         return nil

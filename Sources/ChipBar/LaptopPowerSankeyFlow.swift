@@ -9,6 +9,15 @@ struct LaptopPowerTopology: Equatable {
     let systemWatts: Double
     let chipWatts: Double
     let otherWatts: Double
+    let batteryPercent: Double?
+    let batteryCharged: Bool
+
+    var hasBatteryTransfer: Bool {
+        // Only actual, validated charge or adapter-assist causes a 3-stage
+        // layout. A zero-current battery would otherwise create a misleading
+        // full-width adapter -> system ribbon and no battery branch.
+        chargeWatts > 0.5 || assistWatts > 0.5
+    }
 
     var chargeWatts: Double { mode == .adapterCharging ? batteryWatts : 0 }
     var assistWatts: Double { mode == .adapterAssisted ? -batteryWatts : 0 }
@@ -49,6 +58,8 @@ struct LaptopPowerTopology: Equatable {
         self.systemWatts = system
         self.chipWatts = chip
         self.otherWatts = system - chip
+        self.batteryPercent = reading.batteryPercent
+        self.batteryCharged = reading.isCharged
     }
 }
 
@@ -56,7 +67,7 @@ struct LaptopPowerTopology: Equatable {
 /// One watt-to-point scale applies to the entire graph, including both
 /// branches of charging and battery-assisted operation.
 struct LaptopSankeyGeometry {
-    static let height: CGFloat = 158
+    static let height: CGFloat = 132
     static let gap: CGFloat = 12
 
     let scale: CGFloat
@@ -76,7 +87,9 @@ struct LaptopSankeyGeometry {
     static func make(_ flow: LaptopPowerTopology) -> LaptopSankeyGeometry {
         let largest = max(flow.sourceWatts + flow.assistWatts,
                           flow.systemWatts + flow.chargeWatts)
-        let s = min(CGFloat(4.4), (height - 32 - gap) / CGFloat(max(largest, 1)))
+        // Deliberately slimmer than the desktop Sankey: wide pale ribbons
+        // dominated the MacBook detail card and looked like a solid rectangle.
+        let s = min(CGFloat(2.45), (height - 30 - gap) / CGFloat(max(largest, 1)))
         let inputH = CGFloat(flow.sourceWatts) * s
         let assistH = CGFloat(flow.assistWatts) * s
         let systemH = CGFloat(flow.systemWatts) * s
@@ -119,6 +132,30 @@ struct LaptopPowerSankeyFlow: View {
         flow.mode == .battery
             ? ChipBarLocale.choose("Battery power", "电池供电")
             : ChipBarLocale.choose("Adapter input", "适配器输入")
+    }
+
+    private var batteryStateTitle: String {
+        switch flow.mode {
+        case .adapterCharging:
+            return ChipBarLocale.choose("Charging battery", "电池充电中")
+        case .adapterAssisted:
+            return ChipBarLocale.choose("Battery assisting", "电池辅助供电")
+        case .adapter:
+            return flow.batteryCharged
+                ? ChipBarLocale.choose("Battery charged · 0 W", "电池已充满 · 0 W")
+                : ChipBarLocale.choose("Battery not charging · 0 W", "电池暂未充电 · 0 W")
+        case .battery:
+            return ChipBarLocale.choose("Running on battery", "正在使用电池")
+        case .desktop:
+            return ChipBarLocale.choose("Desktop Mac", "台式 Mac")
+        }
+    }
+
+    private var batteryCaption: String {
+        if let percentage = flow.batteryPercent, percentage.isFinite {
+            return " · \(Int(percentage.rounded()))%"
+        }
+        return ""
     }
 
     private var assistCaption: String? {
@@ -191,8 +228,8 @@ struct LaptopPowerSankeyFlow: View {
             guard height > 0 else { return }
             let path = ribbon(from: x0, to: x1, at: y0, to: y1, height: height)
             context.fill(path, with: .linearGradient(
-                Gradient(colors: [primary.opacity(opacity * 0.50),
-                                  primary.opacity(opacity)]),
+                Gradient(colors: [primary.opacity(opacity * 0.28),
+                                  primary.opacity(opacity * 0.66)]),
                 startPoint: CGPoint(x: x0, y: 0),
                 endPoint: CGPoint(x: x1, y: 0)))
         }
@@ -235,7 +272,7 @@ struct LaptopPowerSankeyFlow: View {
              from: g.systemTop + g.chipHeight, to: g.otherTop,
              height: g.otherHeight, opacity: 0.42)
 
-        rail(x: left, y: g.leftTop, height: g.inputHeight, opacity: 0.72)
+        rail(x: left, y: g.leftTop, height: g.inputHeight, opacity: 0.68)
         rail(x: left, y: g.assistTop, height: g.assistHeight, opacity: 0.42)
         rail(x: middle, y: g.systemTop, height: g.systemHeight, opacity: 0.75)
         rail(x: middle, y: g.chargeTop, height: g.chargeHeight, opacity: 0.40)
@@ -243,18 +280,51 @@ struct LaptopPowerSankeyFlow: View {
         rail(x: right, y: g.otherTop, height: g.otherHeight, opacity: 0.52)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+    private var statusRow: some View {
+        HStack(spacing: 7) {
+            Image(systemName: flow.mode == .battery ? "battery.75percent" :
+                  flow.hasBatteryTransfer ? "battery.100percent.bolt" : "battery.100percent")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(batteryStateTitle + batteryCaption)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if flow.mode == .adapter {
+                Text(ChipBarLocale.choose("No charging flow", "无充电分流"))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var compactFlow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            statusRow
+            // When pack current is 0 W, the real topology has only one
+            // system input. Reuse the proven desktop two-branch drawing
+            // instead of repeating identical adapter/system watt bars.
+            PowerSankeyFlow(
+                distribution: PowerDistribution(internalWatts: flow.systemWatts,
+                                                chipWatts: flow.chipWatts),
+                externalWatts: nil, sourceTitle: "", active: active,
+                internalTitle: "系统功率")
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var splitFlow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            statusRow
             HStack(alignment: .top, spacing: 8) {
                 valueColumn(sourceName, value: flow.sourceWatts, detail: assistCaption)
                 valueColumn(ChipBarLocale.choose("System power", "系统功率"),
                             value: flow.systemWatts, detail: chargeCaption)
-                valueColumn(ChipBarLocale.choose("Chip", "芯片"), value: flow.chipWatts,
-                            detail: ChipBarLocale.choose(
-                                "Other " + watts(flow.otherWatts) + " W",
-                                "其余部件 " + watts(flow.otherWatts) + " W"))
+                valueColumn(ChipBarLocale.choose("Chip", "芯片"),
+                            value: flow.chipWatts)
             }
-            .frame(height: 77, alignment: .top)
+            .frame(height: 62, alignment: .top)
 
             Canvas(opaque: false, rendersAsynchronously: false) { context, size in
                 draw(context: context, size: size)
@@ -263,6 +333,34 @@ struct LaptopPowerSankeyFlow: View {
             .accessibilityHidden(true)
             .opacity(active ? 1 : 0.45)
 
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if flow.chargeWatts > 0.5 {
+                    Text(ChipBarLocale.choose(
+                        "To battery " + watts(flow.chargeWatts) + " W",
+                        "充入电池 " + watts(flow.chargeWatts) + " W"))
+                } else if flow.assistWatts > 0.5 {
+                    Text(ChipBarLocale.choose(
+                        "From battery " + watts(flow.assistWatts) + " W",
+                        "电池补能 " + watts(flow.assistWatts) + " W"))
+                }
+                Spacer(minLength: 5)
+                Text(ChipBarLocale.choose(
+                    "Other components " + watts(flow.otherWatts) + " W (est.)",
+                    "其他部件 " + watts(flow.otherWatts) + " W（估算）"))
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if flow.hasBatteryTransfer {
+                splitFlow
+            } else {
+                compactFlow
+            }
             Text(ChipBarLocale.choose(
                 "System power is estimated from SMC input minus battery power; chip power comes from macmon.",
                 "系统功率根据 SMC 输入与电池净功率差估算；芯片功率来自 macmon。"))
@@ -270,7 +368,7 @@ struct LaptopPowerSankeyFlow: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(ChipBarLocale.choose(
             "\(sourceName) \(watts(flow.sourceWatts)) W, system \(watts(flow.systemWatts)) W, battery charging \(watts(flow.chargeWatts)) W, battery assistance \(watts(flow.assistWatts)) W, chip \(watts(flow.chipWatts)) W, other components \(watts(flow.otherWatts)) W.",
             "\(sourceName) \(watts(flow.sourceWatts)) 瓦，系统 \(watts(flow.systemWatts)) 瓦，电池充电 \(watts(flow.chargeWatts)) 瓦，电池补能 \(watts(flow.assistWatts)) 瓦，芯片 \(watts(flow.chipWatts)) 瓦，其余部件 \(watts(flow.otherWatts)) 瓦。"))
