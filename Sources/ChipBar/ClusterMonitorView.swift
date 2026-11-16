@@ -48,6 +48,7 @@ struct ClusterMonitorPanel: View {
     let close: () -> Void
     @State private var showNetworkHelp = false
     @State private var expandedTaskNodeIDs: Set<String> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
 
@@ -308,12 +309,17 @@ struct ClusterMonitorPanel: View {
                             .foregroundStyle(accent)
                         Text(ChipBarLocale.format("Parallel simulations · %d", "并行仿真 · %d 项", node.tasks.count))
                             .font(.caption.weight(.semibold))
+                            .lineLimit(1).minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                         Text(groupSummary(node.tasks))
                             .font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
                         Image(systemName: "chevron.down")
                             .font(.caption2.weight(.medium))
                             .rotationEffect(.degrees(expanded ? 180 : 0))
+                            .animation(reduceMotion ? nil :
+                                .easeInOut(duration: SidePanelLayout.clusterDisclosureAnimationDuration),
+                                value: expanded)
                             .foregroundStyle(.secondary)
                     }
                     .contentShape(Rectangle())
@@ -328,11 +334,12 @@ struct ClusterMonitorPanel: View {
                         ForEach(node.tasks) { task in
                             taskDetail(task)
                         }
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity)
                     }
                 }
                 .animation(
-                    .easeInOut(duration: SidePanelLayout.clusterDisclosureAnimationDuration),
+                    reduceMotion ? nil :
+                        .easeInOut(duration: SidePanelLayout.clusterDisclosureAnimationDuration),
                     value: expanded
                 )
                 .clipped()
@@ -351,10 +358,10 @@ struct ClusterMonitorPanel: View {
 
     private func groupSummary(_ tasks: [ClusterTaskReadout]) -> String {
         if let average = averageKnownProgress(tasks) {
-            return ChipBarLocale.format("Average %.0f%%", "平均 %.0f%%", average * 100)
+            return ChipBarLocale.format("Progress avg %.0f%%", "项目进度 平均 %.0f%%", average * 100)
         }
         let count = tasks.filter { $0.progress != nil }.count
-        return ChipBarLocale.format("%d/%d with progress", "%d/%d 项有进度", count, tasks.count)
+        return ChipBarLocale.format("Progress %d/%d known", "项目进度 %d/%d 已知", count, tasks.count)
     }
 
     private func taskDetail(_ task: ClusterTaskReadout) -> some View {
