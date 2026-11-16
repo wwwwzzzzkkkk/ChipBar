@@ -46,7 +46,7 @@ struct MacHardwareInformationSection: View {
     let chip: String
     private let info = MacHardwareInformation.current
     private let tiers = CPUCoreTopology.current.levels
-    private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
+    private let accent = Color.primary
 
     private var coreDescription: String {
         guard !tiers.isEmpty else { return "\(info.logicalCPUCount) 逻辑核" }
@@ -60,7 +60,7 @@ struct MacHardwareInformationSection: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(accent)
                     .frame(width: 32, height: 32)
-                    .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                    .background(accent.opacity(0.085), in: RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(chip.isEmpty ? "Apple Silicon" : chip)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))

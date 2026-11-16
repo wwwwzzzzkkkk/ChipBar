@@ -69,7 +69,7 @@ struct Dashboard: View {
     @ObservedObject private var tileLayout = DashboardTileLayoutModel.shared
     @StateObject private var powerReading = ChipBarPowerFlowModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
+    private let accent = Color.primary
     private let appIcon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
         .flatMap { NSImage(contentsOf: $0) }
 
@@ -655,12 +655,9 @@ struct Dashboard: View {
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Spacer(minLength: 0)
-                if enabled {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .semibold))
-                }
+
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             .foregroundStyle(enabled ? Color.black : .primary)
             .padding(.horizontal, 10)
             .frame(height: 34)
@@ -692,12 +689,9 @@ struct Dashboard: View {
                     .font(.system(size: 10, weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Spacer(minLength: 0)
-                if enabled {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .semibold))
-                }
+
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             .foregroundStyle(enabled ? Color.black : .primary)
             .padding(.horizontal, 10)
             .frame(height: 34)

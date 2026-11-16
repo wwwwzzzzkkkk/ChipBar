@@ -139,7 +139,8 @@ private struct PowerSankeyFlow: View, Animatable {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let amber = Color(red: 251 / 255, green: 191 / 255, blue: 36 / 255)
+    // Match the restrained monochrome settings palette on the power graph.
+    private let amber = Color.primary
 
     private func value(_ watts: Double?) -> String {
         guard let watts, watts.isFinite, watts >= 0 else { return "—" }
@@ -422,14 +423,36 @@ struct PowerSupplyDetailView: View {
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
                         }
-                        PowerSankeyFlow(distribution: breakdown, externalWatts: supplyWatts,
-                                        sourceTitle: supplyTitle, active: active && reading.live)
-                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
-                                       value: breakdown.internalWatts)
-                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
-                                       value: breakdown.chipWatts)
-                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
-                                       value: supplyWatts)
+                        if reading.hasBattery {
+                            if let flow = LaptopPowerTopology(
+                                reading: reading, chipWatts: sampler.chipWattsAtReading) {
+                                LaptopPowerSankeyFlow(flow: flow, active: active && reading.live)
+                            } else {
+                                VStack(spacing: 10) {
+                                    Image(systemName: "battery.100percent")
+                                        .font(.system(size: 22, weight: .light))
+                                        .foregroundStyle(.secondary)
+                                    Text(ChipBarLocale.choose(
+                                        "Waiting for valid adapter and battery power sensors",
+                                        "等待有效的适配器与电池功率数据"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 245)
+                            }
+                        } else {
+                            PowerSankeyFlow(distribution: breakdown, externalWatts: supplyWatts,
+                                            sourceTitle: supplyTitle,
+                                            active: active && reading.live)
+                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
+                                           value: breakdown.internalWatts)
+                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
+                                           value: breakdown.chipWatts)
+                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
+                                           value: supplyWatts)
+                        }
                     }
                     .padding(12)
                     .glassTile(radius: 26)

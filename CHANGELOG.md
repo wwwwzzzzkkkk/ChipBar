@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-11-17
+
+- 将「设备与设置」页改为黑白及中性灰配色：统一硬件信息图标、采样频率、菜单栏多选、功率选择器与开关样式；取消菜单栏九宫格中所有可见的打勾符号，改用胶囊底色表达是否已启用，保留完整 VoiceOver 状态。
+- 为 MacBook 新增自动识别外接供电、电池充电、仅电池供电、适配器＋电池协同供电的三级功率流向图：电源来源 → 系统／电池 → 芯片／其余部件；Mac mini 保留原有双分支桑基图。
+- 同步显示真实 SMC 适配器和电池净功率、macmon 芯片功耗，系统及其他部件标注为差额估算；传感器缺失、状态矛盾或读数过期时隐藏错误流量，不伪造结果。
+- 电源图随黑白主题统一灰阶；不更改采样频率、实际监控传感器或集群只读权限。
+
+
 ## [4.0.0] - 2026-11-16
 
 - Make `wwwwzzzzkkkk/ChipBar` the standalone source and release repository, with root-level SwiftPM project, CI, GitHub Releases, Homebrew Cask and in-app updater targeting the new URL; no legacy update redirect.

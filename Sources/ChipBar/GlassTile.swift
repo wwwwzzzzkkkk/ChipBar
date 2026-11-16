@@ -60,6 +60,10 @@ struct MenuChoiceSurface: ViewModifier {
         if selected {
             content
                 .background(Color.white, in: Capsule(style: .continuous))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.10), lineWidth: 0.7)
+                }
                 .foregroundStyle(Color.black)
         } else {
             content.glassTile(radius: 17, interactive: true)
