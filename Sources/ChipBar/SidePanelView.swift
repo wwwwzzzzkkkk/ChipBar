@@ -41,14 +41,12 @@ enum SidePanelLayout {
     }
 }
 
-/// Keep Cluster's first frame stable. Other pages retain their previous
-/// fast-to-open placeholder strategy to avoid delaying expensive samplers.
+/// Every sidecar mounts the correct real view before its first visible frame.
+/// A delayed placeholder and alpha/position animation make translucent glass
+/// surfaces visibly flicker, even if the data is already available.
 enum SidePanelOpeningPolicy {
-    static let clusterSlidePoints: CGFloat = 12
-    static let clusterSlideDuration: TimeInterval = 0.24
-
     static func presentsFinalContentBeforeShowing(_ kind: DashboardSidePanelKind) -> Bool {
-        kind == .cluster
+        true
     }
 }
 
@@ -90,6 +88,25 @@ private struct ClusterSidecarContentHeightKey: PreferenceKey {
 enum ClusterSidecarSizing {
     static let minimumHeight: CGFloat = 210
     static let edgeInset: CGFloat = 8
+    // AppKit/SwiftUI can disagree by a few points on the first intrinsic fit.
+    // Those corrections are visual noise, not new content worth moving a panel.
+    static let resizeTolerance: CGFloat = 14
+
+    static func shouldResizeWindow(from current: CGFloat, to proposed: CGFloat,
+                                   available: CGFloat, userDisclosurePinned: Bool) -> Bool {
+        guard current.isFinite, proposed.isFinite, available.isFinite else { return false }
+        if current > max(1, available - edgeInset * 2) + 1 { return true }
+        return !userDisclosurePinned && abs(current - proposed) > resizeTolerance
+    }
+
+    static func preservedScrollOffset(_ current: CGFloat, documentHeight: CGFloat,
+                                      viewportHeight: CGFloat, isFlipped: Bool) -> CGFloat {
+        let maximum = max(0, documentHeight - viewportHeight)
+        guard current.isFinite else { return topScrollOffset(
+            documentHeight: documentHeight, viewportHeight: viewportHeight,
+            isFlipped: isFlipped) }
+        return min(max(0, current), maximum)
+    }
 
     static func windowHeight(content: CGFloat, available: CGFloat) -> CGFloat {
         let limit = max(1, available - edgeInset * 2)
@@ -129,8 +146,8 @@ struct DashboardSidePanelView: View {
     @ObservedObject var state: DashboardState
     var close: () -> Void
     /// @Published delivers the new panel selection before storage changes.
-    /// An explicit kind lets the Cluster render its final content *before*
-    /// the NSPanel becomes visible, rather than flashing the old/empty page.
+    /// Explicit kind avoids @Published's didSet timing: the sidecar always
+    /// mounts the selected page before its native window becomes visible.
     var kindOverride: DashboardSidePanelKind? = nil
     var onClusterContentHeightChange: ((CGFloat) -> Void)? = nil
 
