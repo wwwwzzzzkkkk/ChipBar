@@ -309,9 +309,11 @@ struct ClusterMonitorPanel: View {
                             .foregroundStyle(accent)
                         Text(ChipBarLocale.format("Parallel simulations · %d", "并行仿真 · %d 项", node.tasks.count))
                             .font(.caption.weight(.semibold))
+                            .lineLimit(1).minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                         Text(groupSummary(node.tasks))
                             .font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
                         Image(systemName: "chevron.down")
                             .font(.caption2.weight(.medium))
                             .rotationEffect(.degrees(expanded ? 180 : 0))
@@ -356,10 +358,10 @@ struct ClusterMonitorPanel: View {
 
     private func groupSummary(_ tasks: [ClusterTaskReadout]) -> String {
         if let average = averageKnownProgress(tasks) {
-            return ChipBarLocale.format("Project progress · avg %.0f%%", "项目进度 · 平均 %.0f%%", average * 100)
+            return ChipBarLocale.format("Progress avg %.0f%%", "项目进度 平均 %.0f%%", average * 100)
         }
         let count = tasks.filter { $0.progress != nil }.count
-        return ChipBarLocale.format("Project progress · %d/%d known", "项目进度 · %d/%d 已知", count, tasks.count)
+        return ChipBarLocale.format("Progress %d/%d known", "项目进度 %d/%d 已知", count, tasks.count)
     }
 
     private func taskDetail(_ task: ClusterTaskReadout) -> some View {
