@@ -99,7 +99,7 @@ def import_tags():
                 continue
             except RuntimeError as error:
                 if not any(word in str(error).lower()
-                           for word in ("workflow", "422", "unprocessable")):
+                           for word in ("workflow", "422", "unprocessable", "403", "resource not accessible")):
                     raise
                 print(f"Workflow permission prevents {tag} original tag; "
                       "using a clearly marked archive pointer", flush=True)
