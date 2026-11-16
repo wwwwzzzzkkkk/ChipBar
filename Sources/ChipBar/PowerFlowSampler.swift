@@ -3,6 +3,20 @@ import Combine
 import IOKit
 import IOKit.ps
 
+/// Expose raw sensor availability so an absent battery rail does not erase
+/// independently measured adapter/system/SoC readings.
+struct PowerSensorDiagnostics: Equatable, Sendable {
+    var adapterPDTR: Double?
+    var systemPSTR: Double?
+    var batteryPPBR: Double?
+    var batteryCurrentB0AC: Double?
+    var batteryVoltageB0AV: Double?
+    var systemSource: String?
+    var batterySource: String?
+
+    static let empty = PowerSensorDiagnostics()
+}
+
 /// Only the values observed in read-only SMC and IOPowerSources are shown.
 /// An internal SMC DC rail is not a wall-socket AC power meter.
 struct ChipBarPowerReading: Equatable, Sendable {
@@ -18,6 +32,7 @@ struct ChipBarPowerReading: Equatable, Sendable {
     var sourceKey: String? = nil
     var usb: USBCPowerSnapshot = USBCPowerSnapshot()
     var isCharged: Bool = false
+    var diagnostics: PowerSensorDiagnostics = .empty
 
     static let unavailable = ChipBarPowerReading(
         hasBattery: false, onAdapter: true, isCharging: false,
@@ -45,40 +60,53 @@ actor ChipBarPowerSampler {
         let battery = Self.batteryState()
 
         if let battery {
+            // Read the three SMC physical domains independently. A missing
+            // PPBR/B0AC must NOT invalidate a good PDTR or PSTR measurement.
             let rawAdapter = smc?.double("PDTR")
-            // PPBR directly reports battery pack watts on supported Macs.
-            // Use the B0AC/B0AV current-voltage product as a fallback; some
-            // models expose only one source. Never invent missing telemetry.
+            let rawSystem = smc?.double("PSTR")
+            let rawPack = smc?.double("PPBR")
+            let current = smc?.double("B0AC")
+            let voltage = smc?.double("B0AV")
             let packReading = Self.selectBatteryPower(
-                directWatts: smc?.double("PPBR"),
-                currentMilliAmps: smc?.double("B0AC"),
-                voltageMilliVolts: smc?.double("B0AV"))
-            let pack = packReading?.watts
-            let input = Self.power(rawAdapter, allowZero: true)
-            let adapter = battery.connected ? input : 0
-            let batteryWatts = pack
-            let systemWatts: Double? = {
-                guard let pack else { return nil }
-                if !battery.connected { return pack < 0 ? -pack : nil }
-                guard let input else { return nil }
-                let result = input - pack
-                return result >= 0 && result < 500 ? result : nil
-            }()
-            let available = pack != nil && (!battery.connected || input != nil)
-            checkConnection(healthy: available)
+                directWatts: rawPack,
+                currentMilliAmps: current,
+                voltageMilliVolts: voltage)
+            let adapter = battery.connected ? Self.power(rawAdapter, allowZero: true) : nil
+            let frame = Self.laptopSystemFrame(
+                onAdapter: battery.connected,
+                adapterWatts: adapter,
+                batteryWatts: packReading?.watts,
+                measuredSystemWatts: rawSystem)
+
+            let observed = (adapter != nil && (adapter ?? 0) > 0)
+                || frame.systemWatts != nil || packReading != nil
+            checkConnection(healthy: observed)
+            let hasBatteryPower = packReading != nil
+            var availableKeys = [String]()
+            if adapter != nil { availableKeys.append("PDTR") }
+            if let systemSource = frame.systemSource { availableKeys.append(systemSource) }
+            if let source = packReading?.source { availableKeys.append(source) }
+
+            let sourceDescription = observed
+                ? (hasBatteryPower ? "SMC 已采样 · 系统与电池分流需核验"
+                                   : "SMC 部分数据可用 · 电池功率暂不可用")
+                : "SMC 功率传感器暂不可用"
             return ChipBarPowerReading(
                 hasBattery: true, onAdapter: battery.connected,
                 isCharging: battery.charging, batteryPercent: battery.percent,
-                adapterWatts: adapter, batteryWatts: batteryWatts,
-                systemWatts: systemWatts,
-                sourceLabel: available ? "SMC 实时采样 · 系统侧为功率差估算" : "传感器暂不可用",
-                live: available,
-                sourceKey: available
-                    ? (battery.connected ? "PDTR + \(packReading?.source ?? "battery")"
-                                         : packReading?.source)
-                    : nil,
-                usb: usb,
-                isCharged: battery.charged
+                adapterWatts: adapter, batteryWatts: packReading?.watts,
+                systemWatts: frame.systemWatts,
+                sourceLabel: sourceDescription, live: observed,
+                sourceKey: availableKeys.isEmpty ? nil : availableKeys.joined(separator: " + "),
+                usb: usb, isCharged: battery.charged,
+                diagnostics: PowerSensorDiagnostics(
+                    adapterPDTR: Self.power(rawAdapter, allowZero: true),
+                    systemPSTR: Self.power(rawSystem, allowZero: true),
+                    batteryPPBR: Self.validPackWatts(rawPack),
+                    batteryCurrentB0AC: current,
+                    batteryVoltageB0AV: voltage,
+                    systemSource: frame.systemSource,
+                    batterySource: packReading?.source)
             )
         }
 
@@ -114,17 +142,42 @@ actor ChipBarPowerSampler {
         }
     }
 
+    /// Select a valid system load without requiring battery telemetry.
+    /// A measured PSTR is an independent system-side value (sometimes slightly
+    /// delayed); a PDTR adapter value is NEVER silently relabelled as system.
+    /// When both adapter and pack are available from the same short SMC pass,
+    /// their net balance is preferred for a conservational flow chart.
+    static func laptopSystemFrame(onAdapter: Bool, adapterWatts: Double?,
+                                  batteryWatts: Double?, measuredSystemWatts: Double?)
+        -> (systemWatts: Double?, systemSource: String?) {
+        let measured = power(measuredSystemWatts, allowZero: false)
+        if onAdapter {
+            if let adapter = power(adapterWatts, allowZero: true),
+               let pack = validPackWatts(batteryWatts) {
+                let net = adapter - pack
+                if net > 0, net < 500 {
+                    return (net, "PDTR−battery")
+                }
+            }
+        } else if let pack = validPackWatts(batteryWatts), pack < -0.5 {
+            return (-pack, "battery discharge")
+        }
+        if let measured { return (measured, "PSTR") }
+        return (nil, nil)
+    }
+
+    private static func validPackWatts(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, abs(value) < 500 else { return nil }
+        return value
+    }
+
     /// Prefer the battery-pack power rail if present and active, but accept
     /// current × voltage if the direct sensor is missing or only reports zero.
     /// A real 0 W from either source remains 0 W (not nil).
     static func selectBatteryPower(directWatts: Double?, currentMilliAmps: Double?,
                                    voltageMilliVolts: Double?)
         -> (watts: Double, source: String)? {
-        let direct: Double? = {
-            guard let value = directWatts, value.isFinite, abs(value) < 500
-            else { return nil }
-            return value
-        }()
+        let direct = validPackWatts(directWatts)
         let derived: Double? = {
             guard let current = currentMilliAmps, let voltage = voltageMilliVolts,
                   current.isFinite, voltage.isFinite,
