@@ -95,4 +95,4 @@
 
 **Tag-only exception:** v2.1.8 had a historical Git tag but no published Release (hence no ZIP to migrate). The tag will be preserved; no installer will be fabricated.
 
-**Integrity:** imported release binaries retain the same SHA-256 as the source. Historical tags keep the original Git commit identity. The migration does not rebuild old apps or alter v4.0.0.
+**Integrity:** imported ZIP and SHA256SUMS files retain exactly the source SHA-256. Git tags point to the original historical commit when accessible in the standalone repository. If GitHub permissions or missing Git objects prevent that, the tag points to a clearly marked **archive reference** containing an explicit link to the real original source tag (never to v4 source). This migration does not rebuild old apps or alter v4.0.0.
