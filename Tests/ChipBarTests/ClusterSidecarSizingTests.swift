@@ -3,18 +3,32 @@ import Testing
 @testable import ChipBar
 
 struct ClusterSidecarSizingTests {
-    @Test func clusterUsesFinalContentBeforeShowingInsteadOfPlaceholder() {
-        #expect(SidePanelOpeningPolicy.presentsFinalContentBeforeShowing(.cluster))
-        #expect(!SidePanelOpeningPolicy.presentsFinalContentBeforeShowing(.power))
-        #expect(!SidePanelOpeningPolicy.presentsFinalContentBeforeShowing(.applications))
-        #expect(!SidePanelOpeningPolicy.presentsFinalContentBeforeShowing(.externalDisk))
+    @Test func everySidecardMountsFinalContentBeforeItsFirstVisibleFrame() {
+        for kind in [DashboardSidePanelKind.cluster, .power, .applications, .externalDisk] {
+            #expect(SidePanelOpeningPolicy.presentsFinalContentBeforeShowing(kind))
+        }
+        #expect(SidePanelLayout.clusterDisclosureAnimationDuration > 0)
     }
 
-    @Test func clusterOpenUsesSubtlePositionOnlyAnimation() {
-        #expect(SidePanelOpeningPolicy.clusterSlidePoints > 0)
-        #expect(SidePanelOpeningPolicy.clusterSlidePoints <= 14)
-        #expect(SidePanelOpeningPolicy.clusterSlideDuration > 0)
-        #expect(SidePanelLayout.clusterDisclosureAnimationDuration > 0)
+    @Test func taskDisclosurePinsWindowAndSmallFirstFitCorrectionsAreIgnored() {
+        #expect(!ClusterSidecarSizing.shouldResizeWindow(
+            from: 420, to: 780, available: 1100, userDisclosurePinned: true))
+        #expect(ClusterSidecarSizing.shouldResizeWindow(
+            from: 420, to: 780, available: 1100, userDisclosurePinned: false))
+        #expect(!ClusterSidecarSizing.shouldResizeWindow(
+            from: 420, to: 426, available: 1100, userDisclosurePinned: false))
+        // A screen-size change is still allowed to shrink an overlong panel.
+        #expect(ClusterSidecarSizing.shouldResizeWindow(
+            from: 700, to: 480, available: 500, userDisclosurePinned: true))
+    }
+
+    @Test func disclosurePreservesCurrentScrollInsteadOfJumpingBackToTitle() {
+        #expect(ClusterSidecarSizing.preservedScrollOffset(
+            160, documentHeight: 1100, viewportHeight: 510, isFlipped: true) == 160)
+        #expect(ClusterSidecarSizing.preservedScrollOffset(
+            160, documentHeight: 570, viewportHeight: 510, isFlipped: true) == 60)
+        #expect(ClusterSidecarSizing.preservedScrollOffset(
+            0, documentHeight: 1100, viewportHeight: 510, isFlipped: true) == 0)
     }
 
     @Test func clusterTopIsIndependentOfParentResize() {
@@ -49,7 +63,7 @@ struct ClusterSidecarSizingTests {
         #expect(ClusterSidecarSizing.windowHeight(content: 310, available: 1100) == 310)
     }
 
-    @Test func expandsForMoreNodesAndDisclosedParallelTasks() {
+    @Test func canFitNewlyDiscoveredNodesBeforeUserDisclosure() {
         let folded = ClusterSidecarSizing.windowHeight(content: 410, available: 1000)
         let expanded = ClusterSidecarSizing.windowHeight(content: 780, available: 1000)
         #expect(expanded > folded)
