@@ -6,6 +6,7 @@
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="https://github.com/wwwwzzzzkkkk/ChipBar/releases/latest">Latest release</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="docs/RELEASE_HISTORY.md">Historical releases</a> ·
   <a href="docs/CLUSTER_MONITOR.md">Cluster guide</a>
 </p>
 
