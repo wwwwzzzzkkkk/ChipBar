@@ -106,7 +106,7 @@ actor ChipBarPowerSampler {
                     batteryCurrentB0AC: current,
                     batteryVoltageB0AV: voltage,
                     systemSource: frame.systemSource,
-                    batterySource: packReading?.source))
+                    batterySource: packReading?.source)
             )
         }
 
