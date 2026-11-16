@@ -21,12 +21,11 @@ import Combine
     private let monitor: Monitor
     private let onClose: () -> Void
     private var transition = UUID()
-    private var lastOpenedOnRight = true
-    private var mountTask: Task<Void, Never>?
     private var clusterFitTask: Task<Void, Never>?
     private var measuredClusterContentHeight: CGFloat = 0
     private var resetClusterScrollOnFit = false
-    private var clusterOpeningAnimationInProgress = false
+    // User interactions pin the native window; only its document grows.
+    private var clusterViewportPinned = false
     private var clusterDisclosureAnimationDeadline: TimeInterval = 0
     private var clusterAnchoredTop: CGFloat?
     private var clusterLayoutSubscription: AnyCancellable?
@@ -102,8 +101,8 @@ import Combine
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                // Animate only the disclosure rows. Never resize the native
-                // window 15 times while SwiftUI is animating their height.
+                // Pin the NSPanel when its SwiftUI rows are manually expanded.
+                self.clusterViewportPinned = true
                 self.clusterDisclosureAnimationDeadline =
                     ProcessInfo.processInfo.systemUptime
                     + SidePanelLayout.clusterDisclosureAnimationDuration + 0.02
@@ -115,51 +114,46 @@ import Combine
     func show(_ kind: DashboardSidePanelKind, beside parent: NSWindow) {
         guard let screen = parent.screen ?? NSScreen.main else { return }
         let priorKind = openedKind
-        // Discovery activation previously happened in SwiftUI.onAppear,
-        // *after* measuring the first frame. Start before measuring instead.
-        // The window controller owns the read-only monitor's visibility.
+        // Discovery is activated before the first intrinsic measurement.
         if kind == .cluster {
             ClusterMonitorService.shared.setPanelVisible(true)
         } else if priorKind == .cluster {
             ClusterMonitorService.shared.setPanelVisible(false)
         }
         transition = UUID()
-        clusterOpeningAnimationInProgress = false
+        clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
-        mountTask?.cancel()
         clusterFitTask?.cancel()
+        clusterFitTask = nil
         measuredClusterContentHeight = 0
         resetClusterScrollOnFit = kind == .cluster
         clusterAnchoredTop = nil
-        let token = transition
         openedKind = kind
         scrollView.verticalScrollElasticity = kind == .cluster ? .none : .automatic
         scrollView.hasVerticalScroller = false
         parentWindow = parent
         let visible = screen.visibleFrame
-        // Adopt the parent appearance before pre-layout so Liquid Glass does
-        // not make an extra light/dark material pass after first presentation.
+
         panel.appearance = parent.appearance
         host.appearance = parent.appearance
         panel.contentView?.appearance = parent.appearance
         let width = SidePanelLayout.width(for: kind)
-        let eagerCluster = SidePanelOpeningPolicy.presentsFinalContentBeforeShowing(kind)
+        let isCluster = kind == .cluster
+
+        // Render the actual page and resolve the @Published selection race
+        // while the native glass window is still hidden. Replacing a loading
+        // shell after a 90ms delay caused a second visible composition pass.
+        host.setFrameSize(NSSize(width: width, height: SidePanelLayout.height(for: kind)))
+        host.rootView = AnyView(DashboardSidePanelView(
+            monitor: monitor, state: state, close: onClose,
+            kindOverride: kind,
+            onClusterContentHeightChange: { [weak self] height in
+                self?.scheduleClusterFit(measuredHeight: height)
+            }
+        ))
+        host.layoutSubtreeIfNeeded()
         let desiredHeight: CGFloat
-        if eagerCluster {
-            // The cluster is lightweight: construct and measure the actual
-            // content while the NSPanel is still hidden. Showing a 310pt
-            // loading shell and swapping it after 90ms caused a visible flash
-            // followed by a second window-size correction.
-            host.setFrameSize(NSSize(width: width,
-                                     height: SidePanelLayout.clusterHeight))
-            host.rootView = AnyView(DashboardSidePanelView(
-                monitor: monitor, state: state, close: onClose,
-                kindOverride: kind,
-                onClusterContentHeightChange: { [weak self] contentHeight in
-                    self?.scheduleClusterFit(measuredHeight: contentHeight)
-                }
-            ))
-            host.layoutSubtreeIfNeeded()
+        if isCluster {
             let fitted = ceil(host.fittingSize.height)
             desiredHeight = fitted.isFinite && fitted > 0
                 ? min(10_000, fitted) : SidePanelLayout.clusterHeight
@@ -167,106 +161,35 @@ import Combine
         } else {
             desiredHeight = SidePanelLayout.height(for: kind)
         }
-        let height = eagerCluster
+        let height = isCluster
             ? ClusterSidecarSizing.windowHeight(content: desiredHeight,
-                                               available: visible.height)
+                                                available: visible.height)
             : min(desiredHeight, max(200, visible.height - 16))
-        host.setFrameSize(NSSize(width: width,
-                                 height: max(desiredHeight, height)))
-        if eagerCluster {
+        host.setFrameSize(NSSize(width: width, height: max(desiredHeight, height)))
+        if isCluster {
             scrollView.hasVerticalScroller = desiredHeight > height + 2
-            host.layoutSubtreeIfNeeded()
         }
+        host.layoutSubtreeIfNeeded()
+
         let spacing: CGFloat = 9
         let rightSpace = visible.maxX - parent.frame.maxX - 8
         let leftSpace = parent.frame.minX - visible.minX - 8
         let openRight = rightSpace >= width + spacing || rightSpace >= leftSpace
-        lastOpenedOnRight = openRight
         let desiredX = openRight ? parent.frame.maxX + spacing : parent.frame.minX - width - spacing
         let x = min(max(visible.minX + 8, desiredX), visible.maxX - width - 8)
         let top = min(visible.maxY - 8, parent.frame.maxY)
-        if eagerCluster { clusterAnchoredTop = top }
+        if isCluster { clusterAnchoredTop = top }
         let y = max(visible.minY + 8, top - height)
         let target = NSRect(x: x, y: y, width: width, height: height)
-        // Cluster mounts its final glass content before becoming visible.
-        // Animate only horizontal position: alpha fading the transparent
-        // NSPanel triggers another Liquid Glass compositing pass (a flash).
-        if !eagerCluster {
-            host.rootView = AnyView(SidePanelLoadingView(kind: kind))
-        }
-        let clusterMotion = eagerCluster
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let openingCluster = eagerCluster && !panel.isVisible
-        if !panel.isVisible {
-            if eagerCluster {
-                let slide: CGFloat = openRight
-                    ? -SidePanelOpeningPolicy.clusterSlidePoints
-                    : SidePanelOpeningPolicy.clusterSlidePoints
-                panel.setFrame(clusterMotion ? target.offsetBy(dx: slide, dy: 0) : target,
-                               display: true)
-                panel.alphaValue = 1
-                clusterOpeningAnimationInProgress = clusterMotion
-            } else {
-                let offset: CGFloat = openRight ? -14 : 14
-                panel.setFrame(target.offsetBy(dx: offset, dy: 0), display: false)
-                panel.alphaValue = 0
-            }
-            panel.makeKeyAndOrderFront(nil)
-        } else {
-            if eagerCluster {
-                panel.setFrame(target, display: true)
-                panel.alphaValue = 1
-            }
-            panel.makeKeyAndOrderFront(nil)
-        }
-        if eagerCluster {
+
+        // AppKit's alpha/position animation of a transparent glass panel
+        // produces a compositor hitch. Only inner SwiftUI controls animate.
+        panel.setFrame(target, display: false)
+        panel.alphaValue = 1
+        panel.makeKeyAndOrderFront(nil)
+        if isCluster {
             scrollClusterToTop()
             resetClusterScrollOnFit = false
-            if openingCluster && clusterMotion {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = SidePanelOpeningPolicy.clusterSlideDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    panel.animator().setFrame(target, display: true)
-                } completionHandler: {
-                    Task { @MainActor [weak self] in
-                        guard let self, self.transition == token else { return }
-                        self.clusterOpeningAnimationInProgress = false
-                        self.scheduleClusterFit()
-                        self.panel.invalidateShadow()
-                    }
-                }
-            } else {
-                scheduleClusterFit()
-            }
-            return
-        }
-        mountTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(90)) }
-            catch { return }
-            guard let self, self.transition == token, self.panel.isVisible,
-                  self.openedKind == kind else { return }
-            self.host.rootView = AnyView(DashboardSidePanelView(
-                monitor: self.monitor, state: self.state, close: self.onClose,
-                onClusterContentHeightChange: { [weak self] height in
-                    self?.scheduleClusterFit(measuredHeight: height)
-                }
-            ))
-            self.mountTask = nil
-            if kind == .cluster { self.scheduleClusterFit(resetScroll: true) }
-        }
-        let motion = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        guard motion else {
-            panel.setFrame(target, display: true)
-            panel.alphaValue = 1
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.26
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.72, 0.30, 1.0)
-            panel.animator().setFrame(target, display: true)
-            panel.animator().alphaValue = 1
-        } completionHandler: {
-            Task { @MainActor [weak self] in self?.panel.invalidateShadow() }
         }
     }
 
@@ -284,7 +207,6 @@ import Combine
         // Only the task rows animate. Wait until their transition ends,
         // then fit the native NSPanel once. Repeated frame updates were
         // moving the entire glass container during every disclosure.
-        guard !clusterOpeningAnimationInProgress else { return }
         clusterFitTask?.cancel()
         let token = transition
         let remaining = clusterDisclosureAnimationDeadline
@@ -359,14 +281,12 @@ import Combine
         }
         transition = UUID()
         openedKind = nil
-        mountTask?.cancel()
-        mountTask = nil
         clusterFitTask?.cancel()
         clusterFitTask = nil
         measuredClusterContentHeight = 0
         resetClusterScrollOnFit = false
-        clusterOpeningAnimationInProgress = false
         clusterDisclosureAnimationDeadline = 0
+        clusterViewportPinned = false
         clusterAnchoredTop = nil
         let token = transition
         guard panel.isVisible else {
@@ -388,7 +308,6 @@ import Combine
             context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().alphaValue = 0
-            panel.animator().setFrame(panel.frame.offsetBy(dx: lastOpenedOnRight ? -10 : 10, dy: 0), display: true)
         } completionHandler: {
             Task { @MainActor in complete() }
         }
