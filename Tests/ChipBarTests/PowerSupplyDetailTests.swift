@@ -107,6 +107,31 @@ struct PowerSupplyDetailTests {
         #expect(chart.assistTop > chart.leftTop + chart.inputHeight)
     }
 
+    @Test func batteryDirectPowerRailIsPreferredAndCurrentVoltageIsFallback() {
+        let direct = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 18.5, currentMilliAmps: 1000, voltageMilliVolts: 12000)
+        #expect(direct?.watts == 18.5)
+        #expect(direct?.source == "PPBR")
+
+        let fallback = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: nil, currentMilliAmps: -1500, voltageMilliVolts: 12000)
+        #expect(fallback?.watts == -18)
+        #expect(fallback?.source == "B0AC/B0AV")
+
+        let zeroDirect = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 0, currentMilliAmps: 1000, voltageMilliVolts: 12000)
+        #expect(zeroDirect?.watts == 12)
+        #expect(zeroDirect?.source == "B0AC/B0AV")
+
+        let zero = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 0, currentMilliAmps: 0, voltageMilliVolts: 12000)
+        #expect(zero?.watts == 0)
+
+        let unknown = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: nil, currentMilliAmps: nil, voltageMilliVolts: nil)
+        #expect(unknown == nil)
+    }
+
     @Test func macbookZeroBatteryCurrentCollapsesToTwoStageAndPreservesStatus() throws {
         let pluggedNoCharge = ChipBarPowerReading(
             hasBattery: true, onAdapter: true, isCharging: false,
