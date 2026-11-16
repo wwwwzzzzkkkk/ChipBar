@@ -129,7 +129,7 @@ struct PowerSupplyDetailTests {
 
         let unknown = ChipBarPowerSampler.selectBatteryPower(
             directWatts: nil, currentMilliAmps: nil, voltageMilliVolts: nil)
-        #expect(unknown == nil)
+        #expect(unknown?.watts == nil)
     }
 
     @Test func macbookZeroBatteryCurrentCollapsesToTwoStageAndPreservesStatus() throws {
