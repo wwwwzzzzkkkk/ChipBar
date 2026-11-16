@@ -116,7 +116,9 @@ struct LaptopPowerSankeyFlow: View {
     private func watts(_ n: Double) -> String { String(format: "%.1f", n) }
 
     private var sourceName: String {
-        flow.mode == .battery ? "电池供电" : "适配器输入"
+        flow.mode == .battery
+            ? ChipBarLocale.choose("Battery power", "电池供电")
+            : ChipBarLocale.choose("Adapter input", "适配器输入")
     }
 
     private var assistCaption: String? {
@@ -245,8 +247,9 @@ struct LaptopPowerSankeyFlow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top, spacing: 8) {
                 valueColumn(sourceName, value: flow.sourceWatts, detail: assistCaption)
-                valueColumn("系统功率", value: flow.systemWatts, detail: chargeCaption)
-                valueColumn("芯片", value: flow.chipWatts,
+                valueColumn(ChipBarLocale.choose("System power", "系统功率"),
+                            value: flow.systemWatts, detail: chargeCaption)
+                valueColumn(ChipBarLocale.choose("Chip", "芯片"), value: flow.chipWatts,
                             detail: ChipBarLocale.choose(
                                 "Other " + watts(flow.otherWatts) + " W",
                                 "其余部件 " + watts(flow.otherWatts) + " W"))

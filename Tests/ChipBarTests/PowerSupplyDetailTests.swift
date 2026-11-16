@@ -43,6 +43,88 @@ struct PowerSupplyDetailTests {
         #expect(SidePanelLayout.width(for: .externalDisk) == 314)
     }
 
+
+    @Test func laptopThreeStagePowerSeparatesBatteryChargeFromSystemAndChip() throws {
+        let charging = ChipBarPowerReading(
+            hasBattery: true, onAdapter: true, isCharging: true, batteryPercent: 65,
+            adapterWatts: 65, batteryWatts: 20, systemWatts: 45,
+            sourceLabel: "SMC", live: true)
+        let topology = try #require(LaptopPowerTopology(reading: charging, chipWatts: 15))
+        #expect(topology.mode == .adapterCharging)
+        #expect(topology.sourceWatts == 65)
+        #expect(topology.systemWatts == 45)
+        #expect(topology.chargeWatts == 20)
+        #expect(topology.assistWatts == 0)
+        #expect(topology.otherWatts == 30)
+        #expect(topology.sourceWatts == topology.systemWatts + topology.chargeWatts)
+
+        let chart = LaptopSankeyGeometry.make(topology)
+        #expect(chart.scale > 0)
+        #expect(abs(chart.inputHeight - chart.systemHeight - chart.chargeHeight) < 0.001)
+        #expect(abs(chart.systemHeight - chart.chipHeight - chart.otherHeight) < 0.001)
+        #expect(abs(chart.chargeTop - chart.systemTop - chart.systemHeight -
+                    LaptopSankeyGeometry.gap) < 0.001)
+        #expect(chart.leftTop >= 0)
+        #expect(chart.chargeTop + chart.chargeHeight <= LaptopSankeyGeometry.height)
+        #expect(chart.otherTop + chart.otherHeight <= LaptopSankeyGeometry.height)
+    }
+
+    @Test func laptopThreeStageAdaptsToBatteryOnlyAdapterOnlyAndCombinedSupply() throws {
+        let onBattery = ChipBarPowerReading(
+            hasBattery: true, onAdapter: false, isCharging: false, batteryPercent: 40,
+            adapterWatts: 0, batteryWatts: -25, systemWatts: 25,
+            sourceLabel: "SMC", live: true)
+        let battery = try #require(LaptopPowerTopology(reading: onBattery, chipWatts: 10))
+        #expect(battery.mode == .battery)
+        #expect(battery.sourceWatts == 25)
+        #expect(battery.chargeWatts == 0)
+        #expect(battery.otherWatts == 15)
+
+        let adapterOnly = ChipBarPowerReading(
+            hasBattery: true, onAdapter: true, isCharging: false, batteryPercent: 80,
+            adapterWatts: 32, batteryWatts: 0, systemWatts: 32,
+            sourceLabel: "SMC", live: true)
+        let adapter = try #require(LaptopPowerTopology(reading: adapterOnly, chipWatts: 12))
+        #expect(adapter.mode == .adapter)
+        #expect(adapter.chargeWatts == 0)
+
+        let assisting = ChipBarPowerReading(
+            hasBattery: true, onAdapter: true, isCharging: false, batteryPercent: 60,
+            adapterWatts: 25, batteryWatts: -15, systemWatts: 40,
+            sourceLabel: "SMC", live: true)
+        let assisted = try #require(LaptopPowerTopology(reading: assisting, chipWatts: 18))
+        #expect(assisted.mode == .adapterAssisted)
+        #expect(assisted.sourceWatts == 25)
+        #expect(assisted.assistWatts == 15)
+        #expect(assisted.chargeWatts == 0)
+        #expect(assisted.sourceWatts + assisted.assistWatts == assisted.systemWatts)
+        let chart = LaptopSankeyGeometry.make(assisted)
+        #expect(abs(chart.systemHeight - chart.inputHeight - chart.assistHeight) < 0.001)
+        #expect(chart.assistTop > chart.leftTop + chart.inputHeight)
+    }
+
+    @Test func laptopThreeStageRejectsMissingStaleAndContradictorySensorValues() {
+        func reading(adapter: Double?, battery: Double?, system: Double?,
+                     charging: Bool = true, live: Bool = true) -> ChipBarPowerReading {
+            ChipBarPowerReading(
+                hasBattery: true, onAdapter: true, isCharging: charging,
+                batteryPercent: 70, adapterWatts: adapter, batteryWatts: battery,
+                systemWatts: system, sourceLabel: "SMC", live: live)
+        }
+        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+                                                     system: 45), chipWatts: 55) == nil)
+        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+                                                     system: 35), chipWatts: 15) == nil)
+        #expect(LaptopPowerTopology(reading: reading(adapter: nil, battery: 20,
+                                                     system: 45), chipWatts: 15) == nil)
+        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: nil,
+                                                     system: 45), chipWatts: 15) == nil)
+        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+                                                     system: 45, charging: false), chipWatts: 15) == nil)
+        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+                                                     system: 45, live: false), chipWatts: 15) == nil)
+    }
+
     @Test func sankeyRibbonsMatchMeasuredWattsAndSixteenPointGap() throws {
         let distribution = PowerDistribution(internalWatts: 28.8, chipWatts: 6.4)
         let layout = try #require(PowerSankeyGeometry.make(distribution: distribution))
