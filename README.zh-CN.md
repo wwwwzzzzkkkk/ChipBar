@@ -2,7 +2,7 @@
 
 **为 Apple Silicon 设计的原生菜单栏性能监控工具，支持可选的双 Mac 只读计算集群。**
 
-[English](README.md) · [最新版本](https://github.com/wwwwzzzzkkkk/ChipBar/releases/latest) · [更新记录](CHANGELOG.md) · [计算集群指南](docs/CLUSTER_MONITOR.md)
+[English](README.md) · [最新版本](https://github.com/wwwwzzzzkkkk/ChipBar/releases/latest) · [更新记录](CHANGELOG.md) · [历史版本](docs/RELEASE_HISTORY.md) · [计算集群指南](docs/CLUSTER_MONITOR.md)
 
 <p align="center"><a href="docs/images/user-dashboard.png"><img src="docs/images/user-dashboard.png" width="420" alt="ChipBar Apple M5 Pro 实机主界面"></a></p>
 <p align="center"><sub>真实运行界面 · 原始 848 × 1972 像素 · 点击查看原图</sub></p>
