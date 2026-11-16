@@ -372,6 +372,9 @@ struct PowerSupplyDetailView: View {
                           chipWatts: sampler.chipWattsAtReading)
     }
     private var mode: PowerSourceMode { PowerSourceMode(reading: reading) }
+    private var partialReading: Bool {
+        reading.hasBattery && (reading.batteryWatts == nil || reading.systemWatts == nil)
+    }
     private var supplyTitle: String {
         mode == .battery ? "电池供电" : "外部供电"
     }
@@ -397,16 +400,24 @@ struct PowerSupplyDetailView: View {
                 .accessibilityLabel("返回主页面")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("电源与功率").font(.headline)
-                    Text(reading.live ? "传感器在线 · \(PowerSamplingCadence.seconds) 秒采样" :
-                         "等待传感器 · \(PowerSamplingCadence.seconds) 秒采样")
+                    Text(reading.live
+                        ? (partialReading
+                            ? "部分功率传感器在线 · \(PowerSamplingCadence.seconds) 秒采样"
+                            : "传感器在线 · \(PowerSamplingCadence.seconds) 秒采样")
+                        : "等待传感器 · \(PowerSamplingCadence.seconds) 秒采样")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Text(ChipBarLocale.choose(reading.live ? "Live" : "Offline", reading.live ? "实时" : "离线"))
+                Text(reading.live
+                     ? ChipBarLocale.choose(partialReading ? "Partial" : "Live",
+                                            partialReading ? "部分可用" : "实时")
+                     : ChipBarLocale.choose("Offline", "离线"))
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(reading.live ? Color.green : Color.secondary)
+                    .foregroundStyle(reading.live && !partialReading
+                                     ? Color.green : Color.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background((reading.live ? Color.green : Color.secondary).opacity(0.12),
+                    .background((reading.live && !partialReading
+                                 ? Color.green : Color.secondary).opacity(0.12),
                                 in: Capsule(style: .continuous))
             }
             .frame(height: 40)
@@ -431,19 +442,10 @@ struct PowerSupplyDetailView: View {
                                 reading: reading, chipWatts: sampler.chipWattsAtReading) {
                                 LaptopPowerSankeyFlow(flow: flow, active: active && reading.live)
                             } else {
-                                VStack(spacing: 10) {
-                                    Image(systemName: "battery.100percent")
-                                        .font(.system(size: 22, weight: .light))
-                                        .foregroundStyle(.secondary)
-                                    Text(ChipBarLocale.choose(
-                                        "Waiting for valid adapter and battery power sensors",
-                                        "等待有效的适配器与电池功率数据"))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .multilineTextAlignment(.center)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 245)
+                                LaptopPowerFallbackView(
+                                    reading: reading,
+                                    chipWatts: sampler.chipWattsAtReading,
+                                    active: active && reading.live)
                             }
                         } else {
                             PowerSankeyFlow(distribution: breakdown, externalWatts: supplyWatts,

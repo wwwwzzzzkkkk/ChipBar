@@ -44,6 +44,67 @@ struct PowerSupplyDetailTests {
     }
 
 
+    @Test func laptopPowerFrameDoesNotEraseValidAdapterOrSystemWhenPackUnavailable() {
+        let measured = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: true, adapterWatts: 44.7, batteryWatts: nil,
+            measuredSystemWatts: 41.2)
+        #expect(measured.systemWatts == 41.2)
+        #expect(measured.systemSource == "PSTR")
+        let unknown = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: true, adapterWatts: 44.7, batteryWatts: nil,
+            measuredSystemWatts: nil)
+        #expect(unknown.systemWatts == nil) // 44.7 adapter W is NOT system W
+
+        let balanced = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: true, adapterWatts: 65, batteryWatts: 20,
+            measuredSystemWatts: 43)
+        #expect(balanced.systemWatts == 45)
+        #expect(balanced.systemSource == "PDTR−battery")
+
+        let battery = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: false, adapterWatts: nil, batteryWatts: -28,
+            measuredSystemWatts: nil)
+        #expect(battery.systemWatts == 28)
+        let batteryMeasured = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: false, adapterWatts: nil, batteryWatts: nil,
+            measuredSystemWatts: 25)
+        #expect(batteryMeasured.systemWatts == 25)
+    }
+
+    @Test func macbookPartialDataAlwaysKeepsValidIndependentMeasurements() {
+        let partial = ChipBarPowerReading(
+            hasBattery: true, onAdapter: true, isCharging: true,
+            batteryPercent: 60, adapterWatts: 44.7,
+            batteryWatts: nil, systemWatts: nil,
+            sourceLabel: "partial", live: true)
+        #expect(LaptopPowerPresentation(reading: partial, chipWatts: 26.1)
+                == .independent)
+        #expect(LaptopPowerTopology(reading: partial, chipWatts: 26.1) == nil)
+
+        var directSystem = partial
+        directSystem.systemWatts = 40.0
+        #expect(LaptopPowerPresentation(reading: directSystem, chipWatts: 26.1)
+                == .systemAndChip)
+        let split = PowerDistribution(internalWatts: directSystem.systemWatts,
+                                      chipWatts: 26.1)
+        #expect(abs((split.otherWatts ?? 0) - 13.9) < 0.001)
+
+        directSystem.systemWatts = 19.0 // mismatched sampling, not a real split
+        #expect(LaptopPowerPresentation(reading: directSystem, chipWatts: 26.1)
+                == .independent)
+        directSystem.systemWatts = nil
+        directSystem.adapterWatts = nil
+        #expect(LaptopPowerPresentation(reading: directSystem, chipWatts: nil)
+                == .unavailable)
+    }
+
+    @Test func smcDecodesLegacyAdapterSp96() {
+        #expect(SMCReader.decode(bytes: [0x0a, 0x80], type: "sp96") == 42.0)
+        #expect(SMCReader.decode(bytes: [0xfd, 0x00], type: "sp96") == -12.0)
+        #expect(SMCReader.decode(bytes: [0x2a, 0x00], type: "sp78") == 42.0)
+        #expect(SMCReader.decode(bytes: [0x0a], type: "sp96") == nil)
+    }
+
     @Test func laptopThreeStagePowerSeparatesBatteryChargeFromSystemAndChip() throws {
         let charging = ChipBarPowerReading(
             hasBattery: true, onAdapter: true, isCharging: true, batteryPercent: 65,

@@ -175,12 +175,14 @@ public final class SMCReader {
             value = (value << 8) | UInt32(b[0])
             return Double(value)
 
-        case "sp78":
-            // Signed fixed point, big-endian: 7 integer bits and 8 fractional.
+        case "sp78", "sp96":
+            // SMC signed fixed point, both big-endian: 7.8 / 9.6 formats.
+            // PDTR can be sp96 on older MacBook models; without decoding
+            // it the adapter and every dependent balance are lost.
             guard b.count >= 2 else { return nil }
             let high = UInt16(b[0]) << 8
             let raw = Int16(bitPattern: high | UInt16(b[1]))
-            return Double(raw) / 256
+            return Double(raw) / (type == "sp96" ? 64 : 256)
 
         default:
             return nil
