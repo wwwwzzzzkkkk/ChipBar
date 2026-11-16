@@ -1,0 +1,66 @@
+name: Import original ChipBar release archive
+
+# One-time migration: import old tag commits and their original ZIP/SHA256 assets.
+# Can be rerun safely; does not rebuild apps, modify VERSION or overwrite assets.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/chipbar-history-import.yml
+      - scripts/import_legacy_releases.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: chipbar-original-release-import
+  cancel-in-progress: false
+
+jobs:
+  import-tags:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Import original ChipBar version tags with Git commit history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add legacy https://github.com/wwwwzzzzkkkk/macmon.git
+          git fetch --no-tags legacy '+refs/tags/chipbar-v*:refs/tags/chipbar-v*'
+          test "$(git tag -l 'chipbar-v[1-3]*' | wc -l | tr -d ' ')" -ge 63
+          git push --atomic origin 'refs/tags/chipbar-v*:refs/tags/chipbar-v*'
+
+  import-releases:
+    needs: import-tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        major: [1, 2, 3]
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Copy and SHA256-verify historical ChipBar Releases
+        run: python3 scripts/import_legacy_releases.py --major ${{ matrix.major }}
+
+  verify-archive:
+    needs: import-releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify all imported assets and keep v4.0.0 as latest
+        run: python3 scripts/import_legacy_releases.py --verify
