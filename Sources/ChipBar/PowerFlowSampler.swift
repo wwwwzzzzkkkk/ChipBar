@@ -17,6 +17,7 @@ struct ChipBarPowerReading: Equatable, Sendable {
     var live: Bool
     var sourceKey: String? = nil
     var usb: USBCPowerSnapshot = USBCPowerSnapshot()
+    var isCharged: Bool = false
 
     static let unavailable = ChipBarPowerReading(
         hasBattery: false, onAdapter: true, isCharging: false,
@@ -75,7 +76,8 @@ actor ChipBarPowerSampler {
                 sourceKey: available
                     ? (battery.connected ? "PDTR + B0AC/B0AV" : "B0AC/B0AV")
                     : nil,
-                usb: usb
+                usb: usb,
+                isCharged: battery.charged
             )
         }
 
@@ -121,6 +123,7 @@ actor ChipBarPowerSampler {
         var percent: Double?
         var connected: Bool
         var charging: Bool
+        var charged: Bool
     }
 
     private static func batteryState() -> BatteryState? {
@@ -138,7 +141,8 @@ actor ChipBarPowerSampler {
             return BatteryState(
                 percent: percent,
                 connected: (dict[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue,
-                charging: (dict[kIOPSIsChargingKey] as? Bool) ?? false
+                charging: (dict[kIOPSIsChargingKey] as? Bool) ?? false,
+                charged: (dict[kIOPSIsChargedKey] as? Bool) ?? false
             )
         }
         return nil
