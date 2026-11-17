@@ -50,6 +50,27 @@ enum SidePanelOpeningPolicy {
     }
 }
 
+/// Direction follows the default dashboard navigation order. One short
+/// content transition, never a transition on the translucent NSPanel.
+enum SidePanelNavigationMotion {
+    static let duration: TimeInterval = 0.28
+    static let enterDuration: TimeInterval = 0.20
+    static let enterDistance: CGFloat = 14
+
+    static func index(_ kind: DashboardSidePanelKind) -> Int {
+        switch kind {
+        case .power: return 0
+        case .externalDisk: return 1
+        case .applications: return 2
+        case .cluster: return 3
+        }
+    }
+
+    static func forward(from old: DashboardSidePanelKind, to new: DashboardSidePanelKind) -> Bool {
+        index(new) > index(old)
+    }
+}
+
 struct SidePanelLoadingView: View {
     let kind: DashboardSidePanelKind
     var body: some View {
