@@ -21,7 +21,7 @@ import QuartzCore
     private let monitor: Monitor
     private let onClose: () -> Void
     private var transition = UUID()
-    private var frameMotionTask: Task<Void, Never>?
+    private var relocationTask: Task<Void, Never>?
     private var closeMotionTask: Task<Void, Never>?
     private var navigationDeadline: TimeInterval = 0
     private var openedOnRight = true
@@ -169,15 +169,15 @@ import QuartzCore
         let wasVisible = panel.isVisible
         let isSwitch = wasVisible && priorKind != nil && priorKind != kind
         let motion = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        frameMotionTask?.cancel()
-        frameMotionTask = nil
+        relocationTask?.cancel()
+        relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
 
-        // A visible cross-screen sweep would cover Home. Fold on the old
-        // side, transfer while hidden, and expand on the new side. Both
-        // visible legs lie strictly inside their own free intervals.
+        // Never resize a native glass window on a frame timer. The
+        // compositor animates its clipped content; the window changes
+        // geometry once, while hidden for a cross-side transfer.
         var expandAtDestination = unfolding
         if wasVisible && SidePanelPlacement.requiresRelocation(
             from: panel.frame, to: hint, parent: parent.frame, visible: visible) {
@@ -192,10 +192,18 @@ import QuartzCore
                 clusterFitTask = nil
                 navigationDeadline = ProcessInfo.processInfo.systemUptime
                     + SidePanelNavigationMotion.relocationDuration
-                morphFrame(to: SidePanelPlacement.folded(oldFrame, side: oldSide),
-                           token: token, duration: SidePanelNavigationMotion.relocationDuration) {
-                    [weak self, weak parent] in
-                    guard let self, let parent, self.transition == token else { return }
+                animateContent(
+                    from: 0, to: SidePanelNavigationMotion.edgeOffset(on: oldSide, relocating: true),
+                    fromOpacity: 1, toOpacity: SidePanelNavigationMotion.exitOpacity,
+                    duration: SidePanelNavigationMotion.relocationDuration,
+                    entering: false)
+                relocationTask = Task { @MainActor [weak self, weak parent] in
+                    do { try await Task.sleep(for: .milliseconds(
+                        Int(SidePanelNavigationMotion.relocationDuration * 1000))) }
+                    catch { return }
+                    guard let self, let parent, self.transition == token,
+                          !Task.isCancelled else { return }
+                    self.relocationTask = nil
                     self.panel.orderOut(nil)
                     self.present(kind, beside: parent, unfolding: true)
                 }
@@ -250,7 +258,7 @@ import QuartzCore
                 order: DashboardTileLayoutModel.shared.arrangement.order)
                 ? .fromRight : .fromLeft
             push.duration = SidePanelNavigationMotion.duration
-            push.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            push.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.75, 0.30, 1.0)
             scrollView.contentView.layer?.add(push, forKey: pageMotionKey)
         }
         host.setFrameSize(NSSize(width: width, height: SidePanelLayout.height(for: kind)))
@@ -261,9 +269,10 @@ import QuartzCore
                 self?.scheduleClusterFit(measuredHeight: height)
             }
         ))
-        host.layoutSubtreeIfNeeded()
         let desiredHeight: CGFloat
         if isCluster {
+            // Only Cluster needs a synchronous intrinsic measurement.
+            host.layoutSubtreeIfNeeded()
             let fitted = ceil(host.fittingSize.height)
             desiredHeight = fitted.isFinite && fitted > 0
                 ? min(10_000, fitted) : SidePanelLayout.clusterHeight
@@ -289,59 +298,56 @@ import QuartzCore
         openedOnRight = openRight
         if isCluster { clusterAnchoredTop = target.maxY }
 
-        // Ordinary same-side switches interpolate only legal frames.
-        // Across sides the arrival unfolds from the safe near edge.
-        if motion && expandAtDestination {
-            panel.setFrame(SidePanelPlacement.folded(target, side: placement.side), display: false)
-            navigationDeadline = ProcessInfo.processInfo.systemUptime
-                + SidePanelNavigationMotion.duration
-            morphFrame(to: target, token: token)
-        } else if motion && panel.isVisible && panel.frame != target {
-            navigationDeadline = ProcessInfo.processInfo.systemUptime + SidePanelNavigationMotion.duration
-            morphFrame(to: target, token: token)
-        } else {
+        // Commit the final legal geometry once, without synchronous
+        // display. Core Animation owns the slide, not a 16ms MainActor loop.
+        if SidePanelNavigationMotion.needsFrameCommit(from: panel.frame, to: target) {
             panel.setFrame(target, display: false)
+        }
+        if motion {
+            navigationDeadline = ProcessInfo.processInfo.systemUptime
+                + (switchingInPlace ? SidePanelNavigationMotion.duration
+                                    : SidePanelNavigationMotion.enterDuration)
         }
         panel.alphaValue = 1
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
-        if motion && !wasVisible && !expandAtDestination {
-            let entry = CABasicAnimation(keyPath: "transform.translation.x")
-            entry.fromValue = openRight ? -SidePanelNavigationMotion.enterDistance
-                : SidePanelNavigationMotion.enterDistance
-            entry.toValue = 0
-            entry.isAdditive = true
-            entry.duration = SidePanelNavigationMotion.enterDuration
-            entry.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            scrollView.contentView.layer?.add(entry, forKey: pageMotionKey)
+        if motion && !switchingInPlace && (!wasVisible || expandAtDestination) {
+            animateContent(
+                from: SidePanelNavigationMotion.edgeOffset(on: placement.side,
+                                                           relocating: expandAtDestination),
+                to: 0, fromOpacity: SidePanelNavigationMotion.exitOpacity,
+                toOpacity: 1, duration: SidePanelNavigationMotion.enterDuration,
+                entering: true)
         }
         panel.makeKeyAndOrderFront(nil)
     }
 
-    /// Own exactly one size animator. A rapid click cancels it and retargets
-    /// from the currently displayed frame rather than its stale destination.
-    private func morphFrame(to target: NSRect, token: UUID,
-                            duration: TimeInterval = SidePanelNavigationMotion.duration,
-                            completion: (() -> Void)? = nil) {
-        let start = panel.frame
-        let began = ProcessInfo.processInfo.systemUptime
-        // Always complete asynchronously, even for equal frames, so a new
-        // relocation cannot replace its own task before the caller returns.
-        frameMotionTask = Task { @MainActor [weak self] in
-            while let self, !Task.isCancelled, self.transition == token {
-                let progress = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
-                let frame = SidePanelNavigationMotion.interpolatedFrame(
-                    from: start, to: target, progress: progress)
-                self.panel.setFrame(frame, display: true)
-                if progress >= 1 {
-                    self.frameMotionTask = nil
-                    completion?()
-                    return
-                }
-                do { try await Task.sleep(for: .milliseconds(16)) }
-                catch { return }
-            }
+    /// Transform and opacity animations affect only the clipped content
+    /// surface. The rounded NSGlassEffectView remains at its final geometry.
+    private func animateContent(from: CGFloat, to: CGFloat,
+                                fromOpacity: Float, toOpacity: Float,
+                                duration: TimeInterval, entering: Bool) {
+        guard let layer = scrollView.contentView.layer else { return }
+        let slide = CABasicAnimation(keyPath: "transform.translation.x")
+        slide.fromValue = from
+        slide.toValue = to
+        slide.isAdditive = true
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = fromOpacity
+        opacity.toValue = toOpacity
+        let group = CAAnimationGroup()
+        group.animations = [slide, opacity]
+        group.duration = duration
+        group.timingFunction = entering
+            ? CAMediaTimingFunction(controlPoints: 0.20, 0.70, 0.25, 1.0)
+            : CAMediaTimingFunction(controlPoints: 0.40, 0.0, 0.75, 1.0)
+        if !entering {
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
         }
+        slide.duration = duration
+        opacity.duration = duration
+        layer.add(group, forKey: pageMotionKey)
     }
 
     /// The live SwiftUI view reports its natural content height via a
@@ -374,7 +380,7 @@ import QuartzCore
             }
             // The geometry driver owns the panel until the page transition
             // ends. A layout preference must never race its final frame.
-            if self.frameMotionTask != nil {
+            if self.relocationTask != nil {
                 self.scheduleClusterFit()
                 return
             }
@@ -453,8 +459,8 @@ import QuartzCore
         transition = UUID()
         let token = transition
         openedKind = nil
-        frameMotionTask?.cancel()
-        frameMotionTask = nil
+        relocationTask?.cancel()
+        relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
         clusterFitTask?.cancel()
@@ -474,18 +480,13 @@ import QuartzCore
             host.rootView = AnyView(EmptyView())
             return
         }
-        let leave = CABasicAnimation(keyPath: "transform.translation.x")
-        leave.fromValue = 0
-        leave.toValue = openedOnRight ? -SidePanelNavigationMotion.enterDistance
-            : SidePanelNavigationMotion.enterDistance
-        leave.isAdditive = true
-        leave.duration = SidePanelNavigationMotion.enterDuration
-        leave.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        leave.fillMode = .forwards
-        leave.isRemovedOnCompletion = false
-        scrollView.contentView.layer?.add(leave, forKey: pageMotionKey)
+        animateContent(from: 0,
+            to: SidePanelNavigationMotion.edgeOffset(on: openedOnRight ? .right : .left),
+            fromOpacity: 1, toOpacity: SidePanelNavigationMotion.exitOpacity,
+            duration: SidePanelNavigationMotion.enterDuration, entering: false)
         closeMotionTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(200)) }
+            do { try await Task.sleep(for: .milliseconds(
+                Int(SidePanelNavigationMotion.enterDuration * 1000))) }
             catch { return }
             guard let self, self.transition == token, !Task.isCancelled else { return }
             self.panel.orderOut(nil)
