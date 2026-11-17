@@ -41,6 +41,73 @@ struct ClusterSidecarSizingTests {
         #expect(abs(leftHalfway.maxY - start.maxY) < 0.001)
     }
 
+    @Test func sidecarUsesLeftWhenDestinationWidthCannotFitOnRight() throws {
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 960)
+        let home = CGRect(x: 800, y: 28, width: 378, height: 900)
+        let narrow = try #require(SidePanelPlacement.choose(
+            parent: home, visible: screen, preferredWidth: 314, preferredHeight: 250))
+        let power = try #require(SidePanelPlacement.choose(
+            parent: home, visible: screen, preferredWidth: 420, preferredHeight: 640))
+        #expect(narrow.side == .right)
+        #expect(power.side == .left)
+        #expect(power.frame.maxX == home.minX - SidePanelPlacement.gap)
+        #expect(!narrow.frame.intersects(home))
+        #expect(!power.frame.intersects(home))
+        #expect(!power.needsHorizontalScroll)
+        #expect(SidePanelPlacement.requiresRelocation(
+            from: narrow.frame, to: power, parent: home, visible: screen))
+    }
+
+    @Test func rightSideIsPreferredWhenBothSidesFitTheWholePage() throws {
+        let screen = CGRect(x: -1920, y: 40, width: 1920, height: 1040)
+        let home = CGRect(x: -1150, y: 80, width: 378, height: 700)
+        let result = try #require(SidePanelPlacement.choose(
+            parent: home, visible: screen, preferredWidth: 420, preferredHeight: 640))
+        #expect(result.side == .right)
+        #expect(result.frame.minX == home.maxX + SidePanelPlacement.gap)
+        #expect(SidePanelPlacement.isLegal(result.frame, beside: home, visible: screen))
+    }
+
+    @Test func smallScreenUsesScrollableFreeIntervalRatherThanOverlap() throws {
+        let screen = CGRect(x: 0, y: 0, width: 1000, height: 500)
+        let home = CGRect(x: 260, y: 12, width: 378, height: 470)
+        let result = try #require(SidePanelPlacement.choose(
+            parent: home, visible: screen, preferredWidth: 420, preferredHeight: 640))
+        #expect(result.side == .right)
+        #expect(result.frame.width == 345)
+        #expect(result.frame.height == 484)
+        #expect(result.documentWidth == 420)
+        #expect(result.needsHorizontalScroll)
+        #expect(SidePanelPlacement.isLegal(result.frame, beside: home, visible: screen))
+        #expect(SidePanelPlacement.choose(
+            parent: CGRect(x: 30, y: 8, width: 940, height: 470),
+            visible: screen, preferredWidth: 420, preferredHeight: 640) == nil)
+    }
+
+    @Test func bothVisibleLegsOfCrossSideAnimationStayOutsideHome() throws {
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 960)
+        let home = CGRect(x: 800, y: 28, width: 378, height: 900)
+        let right = try #require(SidePanelPlacement.choose(
+            parent: home, visible: screen, preferredWidth: 314, preferredHeight: 250))
+        let left = try #require(SidePanelPlacement.choose(
+            parent: home, visible: screen, preferredWidth: 420, preferredHeight: 640))
+        let outgoing = SidePanelPlacement.folded(right.frame, side: right.side)
+        let incoming = SidePanelPlacement.folded(left.frame, side: left.side)
+        for step in 0...20 {
+            let progress = Double(step) / 20
+            let oldFrame = SidePanelNavigationMotion.interpolatedFrame(
+                from: right.frame, to: outgoing, progress: progress)
+            let newFrame = SidePanelNavigationMotion.interpolatedFrame(
+                from: incoming, to: left.frame, progress: progress)
+            #expect(SidePanelPlacement.isLegal(oldFrame, beside: home, visible: screen))
+            #expect(SidePanelPlacement.isLegal(newFrame, beside: home, visible: screen))
+        }
+        let formerlyClamped = CGRect(x: screen.maxX - 8 - 420, y: 280, width: 420, height: 640)
+        #expect(formerlyClamped.intersects(home))
+        #expect(SidePanelPlacement.requiresRelocation(
+            from: formerlyClamped, to: left, parent: home, visible: screen))
+    }
+
     @Test func taskDisclosurePinsWindowAndSmallFirstFitCorrectionsAreIgnored() {
         #expect(!ClusterSidecarSizing.shouldResizeWindow(
             from: 420, to: 780, available: 1100, userDisclosurePinned: true))
