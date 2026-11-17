@@ -97,9 +97,15 @@ enum SidePanelPlacement {
                       y: frame.minY, width: width, height: frame.height)
     }
 
+    static func isLegal(_ frame: CGRect, beside parent: CGRect, visible: CGRect) -> Bool {
+        visible.insetBy(dx: edgeInset, dy: edgeInset).contains(frame)
+            && side(of: frame, beside: parent) != nil
+    }
+
     static func requiresRelocation(from frame: CGRect, to result: Result,
-                                   parent: CGRect) -> Bool {
-        side(of: frame, beside: parent) != result.side
+                                   parent: CGRect, visible: CGRect) -> Bool {
+        !isLegal(frame, beside: parent, visible: visible)
+            || side(of: frame, beside: parent) != result.side
     }
 }
 
@@ -117,6 +123,7 @@ enum SidePanelOpeningPolicy {
 enum SidePanelNavigationMotion {
     static let duration: TimeInterval = 0.28
     static let enterDuration: TimeInterval = 0.20
+    static let relocationDuration: TimeInterval = 0.14
     static let enterDistance: CGFloat = 14
 
     static func tile(_ kind: DashboardSidePanelKind) -> DashboardTile {
