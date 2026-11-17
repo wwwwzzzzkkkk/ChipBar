@@ -50,6 +50,47 @@ enum SidePanelOpeningPolicy {
     }
 }
 
+/// Direction follows the default dashboard navigation order. One short
+/// content transition, never a transition on the translucent NSPanel.
+enum SidePanelNavigationMotion {
+    static let duration: TimeInterval = 0.28
+    static let enterDuration: TimeInterval = 0.20
+    static let enterDistance: CGFloat = 14
+
+    static func tile(_ kind: DashboardSidePanelKind) -> DashboardTile {
+        switch kind {
+        case .externalDisk: return .storage
+        case .power: return .powerSupply
+        case .applications: return .applications
+        case .cluster: return .cluster
+        }
+    }
+
+    static func forward(from old: DashboardSidePanelKind, to new: DashboardSidePanelKind,
+                        order: [DashboardTile] = DashboardTile.allCases) -> Bool {
+        let oldIndex = order.firstIndex(of: tile(old))
+        let newIndex = order.firstIndex(of: tile(new))
+        if let oldIndex, let newIndex { return newIndex > oldIndex }
+        let fallback = DashboardTile.allCases
+        return (fallback.firstIndex(of: tile(new)) ?? 0) >
+            (fallback.firstIndex(of: tile(old)) ?? 0)
+    }
+
+    /// Interpolate all frame edges with the same easing. When top or the near
+    /// horizontal edge is shared, that edge remains fixed throughout.
+    static func interpolatedFrame(from start: CGRect, to target: CGRect,
+                                  progress: Double) -> CGRect {
+        if progress <= 0 { return start }
+        if progress >= 1 { return target }
+        let t = CGFloat(DisclosurePanelSizing.easeInOutProgress(progress))
+        func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * t }
+        return CGRect(x: lerp(start.minX, target.minX),
+                      y: lerp(start.minY, target.minY),
+                      width: lerp(start.width, target.width),
+                      height: lerp(start.height, target.height))
+    }
+}
+
 struct SidePanelLoadingView: View {
     let kind: DashboardSidePanelKind
     var body: some View {

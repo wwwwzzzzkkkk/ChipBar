@@ -11,6 +11,7 @@ struct LaptopPowerTopology: Equatable {
     let otherWatts: Double
     let batteryPercent: Double?
     let batteryCharged: Bool
+    let batteryIsCached: Bool
 
     var hasBatteryTransfer: Bool {
         // Only actual, validated charge or adapter-assist causes a 3-stage
@@ -48,7 +49,7 @@ struct LaptopPowerTopology: Equatable {
         else { return nil }
 
         // Do not invent charging when IOPowerSources reports no charging.
-        if mode == .adapter && abs(pack) > 0.5 { return nil }
+        if mode == .adapter && (abs(pack) > 0.5 || reading.isCharging) { return nil }
         if mode == .adapterCharging && !(pack > 0.5) { return nil }
         if mode == .adapterAssisted && !(pack < -0.5) { return nil }
 
@@ -60,6 +61,7 @@ struct LaptopPowerTopology: Equatable {
         self.otherWatts = system - chip
         self.batteryPercent = reading.batteryPercent
         self.batteryCharged = reading.isCharged
+        self.batteryIsCached = reading.diagnostics.batterySource == "AppleSmartBattery (cached)"
     }
 }
 
@@ -361,9 +363,13 @@ struct LaptopPowerSankeyFlow: View {
             } else {
                 compactFlow
             }
-            Text(ChipBarLocale.choose(
-                "System power is estimated from SMC input minus battery power; chip power comes from macmon.",
-                "系统功率根据 SMC 输入与电池净功率差估算；芯片功率来自 macmon。"))
+            Text(flow.batteryIsCached
+                 ? ChipBarLocale.choose(
+                    "Estimated flow from cached macOS battery telemetry; battery values may lag.",
+                    "根据 macOS 电池缓存读数估算流向，电池数据可能有延迟。")
+                 : ChipBarLocale.choose(
+                    "System power is estimated from SMC input minus battery power; chip power comes from macmon.",
+                    "系统功率根据 SMC 输入与电池净功率差估算；芯片功率来自 macmon。"))
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -373,7 +373,8 @@ struct PowerSupplyDetailView: View {
     }
     private var mode: PowerSourceMode { PowerSourceMode(reading: reading) }
     private var partialReading: Bool {
-        reading.hasBattery && (reading.batteryWatts == nil || reading.systemWatts == nil)
+        reading.hasBattery && (reading.diagnostics.batterySource == "AppleSmartBattery (cached)" ||
+            LaptopPowerTopology(reading: reading, chipWatts: sampler.chipWattsAtReading) == nil)
     }
     private var supplyTitle: String {
         mode == .battery ? "电池供电" : "外部供电"

@@ -9,6 +9,8 @@ struct PowerSensorDiagnostics: Equatable, Sendable {
     var adapterPDTR: Double?
     var systemPSTR: Double?
     var batteryPPBR: Double?
+    var batteryB0APMilliwatts: Double?
+    var registryBatteryWatts: Double?
     var batteryCurrentB0AC: Double?
     var batteryVoltageB0AV: Double?
     var systemSource: String?
@@ -65,18 +67,33 @@ actor ChipBarPowerSampler {
             let rawAdapter = smc?.double("PDTR")
             let rawSystem = smc?.double("PSTR")
             let rawPack = smc?.double("PPBR")
+            let rawB0AP = smc?.double("B0AP")
             let current = smc?.double("B0AC")
             let voltage = smc?.double("B0AV")
-            let packReading = Self.selectBatteryPower(
+            var packReading = Self.selectBatteryPower(
                 directWatts: rawPack,
                 currentMilliAmps: current,
-                voltageMilliVolts: voltage)
+                voltageMilliVolts: voltage,
+                directMilliWatts: rawB0AP)
+            // AppleSmartBattery may update more slowly than SMC. Read the
+            // published values only when SMC is missing or reports near zero
+            // despite an active charge/discharge state. No extra timer.
+            let needsRegistry = packReading == nil ||
+                (abs(packReading?.watts ?? 0) <= 0.25 &&
+                 (battery.charging || !battery.connected))
+            let registry = needsRegistry ? Self.registryBatteryPower() : nil
+            if let registry, Self.registryPowerMatchesState(
+                registry, onAdapter: battery.connected, charging: battery.charging),
+               packReading == nil || abs(registry) > 0.25 {
+                packReading = (registry, "AppleSmartBattery (cached)")
+            }
             let adapter = battery.connected ? Self.power(rawAdapter, allowZero: true) : nil
             let frame = Self.laptopSystemFrame(
                 onAdapter: battery.connected,
                 adapterWatts: adapter,
                 batteryWatts: packReading?.watts,
-                measuredSystemWatts: rawSystem)
+                measuredSystemWatts: rawSystem,
+                batteryIsCached: packReading?.source == "AppleSmartBattery (cached)")
 
             let observed = (adapter != nil && (adapter ?? 0) > 0)
                 || frame.systemWatts != nil || packReading != nil
@@ -103,6 +120,8 @@ actor ChipBarPowerSampler {
                     adapterPDTR: Self.power(rawAdapter, allowZero: true),
                     systemPSTR: Self.power(rawSystem, allowZero: true),
                     batteryPPBR: Self.validPackWatts(rawPack),
+                    batteryB0APMilliwatts: rawB0AP,
+                    registryBatteryWatts: registry,
                     batteryCurrentB0AC: current,
                     batteryVoltageB0AV: voltage,
                     systemSource: frame.systemSource,
@@ -148,7 +167,8 @@ actor ChipBarPowerSampler {
     /// When both adapter and pack are available from the same short SMC pass,
     /// their net balance is preferred for a conservational flow chart.
     static func laptopSystemFrame(onAdapter: Bool, adapterWatts: Double?,
-                                  batteryWatts: Double?, measuredSystemWatts: Double?)
+                                  batteryWatts: Double?, measuredSystemWatts: Double?,
+                                  batteryIsCached: Bool = false)
         -> (systemWatts: Double?, systemSource: String?) {
         let measured = power(measuredSystemWatts, allowZero: false)
         if onAdapter {
@@ -156,11 +176,21 @@ actor ChipBarPowerSampler {
                let pack = validPackWatts(batteryWatts) {
                 let net = adapter - pack
                 if net > 0, net < 500 {
-                    return (net, "PDTR−battery")
+                    // A cached registry battery read must not override a
+                    // materially different independent system rail.
+                    if batteryIsCached, let measured,
+                       abs(measured - net) > max(3, measured * 0.15) {
+                        return (measured, "PSTR")
+                    }
+                    return (net, batteryIsCached ? "PDTR−battery (cached estimate)" : "PDTR−battery")
                 }
             }
         } else if let pack = validPackWatts(batteryWatts), pack < -0.5 {
-            return (-pack, "battery discharge")
+            if batteryIsCached, let measured,
+               abs(measured + pack) > max(3, measured * 0.15) {
+                return (measured, "PSTR")
+            }
+            return (-pack, batteryIsCached ? "battery discharge (cached)" : "battery discharge")
         }
         if let measured { return (measured, "PSTR") }
         return (nil, nil)
@@ -175,26 +205,62 @@ actor ChipBarPowerSampler {
     /// current × voltage if the direct sensor is missing or only reports zero.
     /// A real 0 W from either source remains 0 W (not nil).
     static func selectBatteryPower(directWatts: Double?, currentMilliAmps: Double?,
-                                   voltageMilliVolts: Double?)
+                                   voltageMilliVolts: Double?, directMilliWatts: Double? = nil)
         -> (watts: Double, source: String)? {
         let direct = validPackWatts(directWatts)
-        let derived: Double? = {
-            guard let current = currentMilliAmps, let voltage = voltageMilliVolts,
-                  current.isFinite, voltage.isFinite,
-                  abs(current) < 20_000, voltage > 1_000, voltage < 30_000
-            else { return nil }
-            return current * voltage / 1_000_000
-        }()
-
-        if let direct, abs(direct) > 0.25 {
-            return (direct, "PPBR")
-        }
-        if let derived, abs(derived) > 0.25 {
-            return (derived, "B0AC/B0AV")
-        }
+        let b0ap = validPackWatts(directMilliWatts.map { $0 / 1_000 })
+        let derived = batteryWatts(currentMilliAmps: currentMilliAmps,
+                                   voltageMilliVolts: voltageMilliVolts)
+        // B0AP is the signed battery pack power supported by the Apple
+        // Silicon SMC battery driver. Prefer an active signed direct reading.
+        if let b0ap, abs(b0ap) > 0.25 { return (b0ap, "B0AP") }
+        if let direct, abs(direct) > 0.25 { return (direct, "PPBR") }
+        if let derived, abs(derived) > 0.25 { return (derived, "B0AC/B0AV") }
+        if let b0ap { return (b0ap, "B0AP") }
         if let direct { return (direct, "PPBR") }
         if let derived { return (derived, "B0AC/B0AV") }
         return nil
+    }
+
+    static func batteryWatts(currentMilliAmps: Double?, voltageMilliVolts: Double?) -> Double? {
+        guard let current = currentMilliAmps, let voltage = voltageMilliVolts,
+              current.isFinite, voltage.isFinite,
+              abs(current) < 20_000, voltage > 1_000, voltage < 30_000
+        else { return nil }
+        return validPackWatts(current * voltage / 1_000_000)
+    }
+
+    /// IORegistry can publish a negative integer as unsigned two's complement.
+    /// Decode both 64-bit and legacy 32-bit representations without abs().
+    static func signedBatteryCurrent(_ number: NSNumber) -> Double {
+        let value = number.int64Value
+        if value > Int64(Int32.max), value <= Int64(UInt32.max) {
+            return Double(Int32(bitPattern: UInt32(value)))
+        }
+        return Double(value)
+    }
+
+    static func registryPowerMatchesState(_ watts: Double, onAdapter: Bool, charging: Bool) -> Bool {
+        guard validPackWatts(watts) != nil else { return false }
+        if !onAdapter { return watts < 0 }
+        if charging { return watts >= 0 }
+        // While connected and not charging, the battery can assist.
+        return watts <= 0.5
+    }
+
+    private static func registryBatteryPower() -> Double? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                  IOServiceMatching("AppleSmartBattery"))
+        guard service != IO_OBJECT_NULL else { return nil }
+        defer { IOObjectRelease(service) }
+        func number(_ key: String) -> NSNumber? {
+            IORegistryEntryCreateCFProperty(service, key as CFString,
+                                            kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber
+        }
+        // InstantAmperage is preferred. Amperage is a slower published average.
+        let current = (number("InstantAmperage") ?? number("Amperage")).map(signedBatteryCurrent)
+        return batteryWatts(currentMilliAmps: current,
+                            voltageMilliVolts: number("Voltage")?.doubleValue)
     }
 
     private static func power(_ value: Double?, allowZero: Bool) -> Double? {

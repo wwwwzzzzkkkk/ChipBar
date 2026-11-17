@@ -105,6 +105,66 @@ struct PowerSupplyDetailTests {
         #expect(SMCReader.decode(bytes: [0x0a], type: "sp96") == nil)
     }
 
+    @Test func signedBatteryPowerKeyUsesMilliwattsAndPreservesDischargeDirection() {
+        #expect(SMCReader.decode(bytes: [0x20, 0x4e, 0x00, 0x00], type: "si32") == 20000)
+        #expect(SMCReader.decode(bytes: [0xe0, 0xb1, 0xff, 0xff], type: "si32") == -20000)
+        #expect(SMCReader.decode(bytes: [0x20], type: "si32") == nil)
+        let charge = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: nil, currentMilliAmps: nil, voltageMilliVolts: nil,
+            directMilliWatts: 20000)
+        #expect(charge?.watts == 20)
+        #expect(charge?.source == "B0AP")
+        let discharge = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 0, currentMilliAmps: nil, voltageMilliVolts: nil,
+            directMilliWatts: -20000)
+        #expect(discharge?.watts == -20)
+        let fallback = ChipBarPowerSampler.selectBatteryPower(
+            directWatts: 18, currentMilliAmps: nil, voltageMilliVolts: nil,
+            directMilliWatts: 0)
+        #expect(fallback?.source == "PPBR")
+        #expect(fallback?.watts == 18)
+    }
+
+    @Test func registryBatteryCurrentPreservesSignAndRejectsContradictions() {
+        #expect(ChipBarPowerSampler.signedBatteryCurrent(NSNumber(value: -1500)) == -1500)
+        #expect(ChipBarPowerSampler.signedBatteryCurrent(
+            NSNumber(value: UInt32(bitPattern: -1500))) == -1500)
+        #expect(ChipBarPowerSampler.signedBatteryCurrent(
+            NSNumber(value: UInt64(bitPattern: -1500))) == -1500)
+        #expect(ChipBarPowerSampler.batteryWatts(
+            currentMilliAmps: -1500, voltageMilliVolts: 12000) == -18)
+        #expect(ChipBarPowerSampler.registryPowerMatchesState(
+            -18, onAdapter: false, charging: false))
+        #expect(!ChipBarPowerSampler.registryPowerMatchesState(
+            18, onAdapter: false, charging: false))
+        #expect(!ChipBarPowerSampler.registryPowerMatchesState(
+            -18, onAdapter: true, charging: true))
+        #expect(ChipBarPowerSampler.registryPowerMatchesState(
+            -18, onAdapter: true, charging: false))
+    }
+
+    @Test func cachedBatteryBalanceUsesIndependentSystemWhenReadingsDisagree() {
+        let conflict = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: true, adapterWatts: 65, batteryWatts: 20,
+            measuredSystemWatts: 24, batteryIsCached: true)
+        #expect(conflict.systemSource == "PSTR")
+        #expect(conflict.systemWatts == 24)
+        let estimate = ChipBarPowerSampler.laptopSystemFrame(
+            onAdapter: true, adapterWatts: 65, batteryWatts: 20,
+            measuredSystemWatts: 44, batteryIsCached: true)
+        #expect(estimate.systemWatts == 45)
+        #expect(estimate.systemSource == "PDTR−battery (cached estimate)")
+        var reading = ChipBarPowerReading(
+            hasBattery: true, onAdapter: true, isCharging: true,
+            batteryPercent: 65, adapterWatts: 45, batteryWatts: 0,
+            systemWatts: 45, sourceLabel: "test", live: true)
+        #expect(LaptopPowerTopology(reading: reading, chipWatts: 16) == nil)
+        reading.batteryWatts = 20
+        reading.adapterWatts = 65
+        reading.diagnostics.batterySource = "AppleSmartBattery (cached)"
+        #expect(LaptopPowerTopology(reading: reading, chipWatts: 16)?.batteryIsCached == true)
+    }
+
     @Test func laptopThreeStagePowerSeparatesBatteryChargeFromSystemAndChip() throws {
         let charging = ChipBarPowerReading(
             hasBattery: true, onAdapter: true, isCharging: true, batteryPercent: 65,

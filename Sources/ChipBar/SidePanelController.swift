@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import QuartzCore
 
 @MainActor private final class ChipBarSideWindow: NSPanel {
     var escape: (() -> Void)?
@@ -20,6 +21,11 @@ import Combine
     private let monitor: Monitor
     private let onClose: () -> Void
     private var transition = UUID()
+    private var frameMotionTask: Task<Void, Never>?
+    private var closeMotionTask: Task<Void, Never>?
+    private var navigationDeadline: TimeInterval = 0
+    private var openedOnRight = true
+    private let pageMotionKey = "chipbar.sidecar.page-motion"
     private var clusterFitTask: Task<Void, Never>?
     private var measuredClusterContentHeight: CGFloat = 0
     private var resetClusterScrollOnFit = false
@@ -53,6 +59,8 @@ import Combine
         scrollView.focusRingType = .none
         scrollView.contentView.drawsBackground = false
         scrollView.contentView.focusRingType = .none
+        scrollView.contentView.wantsLayer = true
+        scrollView.contentView.layer?.masksToBounds = true
         // NSHostingView exposes a mutable isFlipped property, not an
         // overridable one. Pin the document origin at the top edge.
         host.isFlipped = true
@@ -113,6 +121,14 @@ import Combine
     func show(_ kind: DashboardSidePanelKind, beside parent: NSWindow) {
         guard let screen = parent.screen ?? NSScreen.main else { return }
         let priorKind = openedKind
+        let wasVisible = panel.isVisible
+        let isSwitch = wasVisible && priorKind != nil && priorKind != kind
+        let motion = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        frameMotionTask?.cancel()
+        frameMotionTask = nil
+        closeMotionTask?.cancel()
+        closeMotionTask = nil
+        scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
         // Discovery is activated before the first intrinsic measurement.
         if kind == .cluster {
             ClusterMonitorService.shared.setPanelVisible(true)
@@ -120,6 +136,8 @@ import Combine
             ClusterMonitorService.shared.setPanelVisible(false)
         }
         transition = UUID()
+        let token = transition
+        navigationDeadline = 0
         clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
         clusterFitTask?.cancel()
@@ -142,6 +160,21 @@ import Combine
         // Render the actual page and resolve the @Published selection race
         // while the native glass window is still hidden. Replacing a loading
         // shell after a 90ms delay caused a second visible composition pass.
+        // The clip layer is the only surface that transitions. Its old and new
+        // content slide inside the existing rounded glass material.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        if motion, isSwitch, let priorKind {
+            let push = CATransition()
+            push.type = .push
+            push.subtype = SidePanelNavigationMotion.forward(from: priorKind, to: kind,
+                order: DashboardTileLayoutModel.shared.arrangement.order)
+                ? .fromRight : .fromLeft
+            push.duration = SidePanelNavigationMotion.duration
+            push.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            scrollView.contentView.layer?.add(push, forKey: pageMotionKey)
+        }
         host.setFrameSize(NSSize(width: width, height: SidePanelLayout.height(for: kind)))
         host.rootView = AnyView(DashboardSidePanelView(
             monitor: monitor, state: state, close: onClose,
@@ -173,22 +206,65 @@ import Combine
         let spacing: CGFloat = 9
         let rightSpace = visible.maxX - parent.frame.maxX - 8
         let leftSpace = parent.frame.minX - visible.minX - 8
-        let openRight = rightSpace >= width + spacing || rightSpace >= leftSpace
-        let desiredX = openRight ? parent.frame.maxX + spacing : parent.frame.minX - width - spacing
+        // A page switch must not re-anchor to a parent window that has just
+        // changed layout. Keep the existing near edge and top during the morph.
+        let openRight = isSwitch ? openedOnRight :
+            (rightSpace >= width + spacing || rightSpace >= leftSpace)
+        openedOnRight = openRight
+        let desiredX = isSwitch
+            ? (openRight ? panel.frame.minX : panel.frame.maxX - width)
+            : (openRight ? parent.frame.maxX + spacing : parent.frame.minX - width - spacing)
         let x = min(max(visible.minX + 8, desiredX), visible.maxX - width - 8)
-        let top = min(visible.maxY - 8, parent.frame.maxY)
+        let top = min(visible.maxY - 8, isSwitch ? panel.frame.maxY : parent.frame.maxY)
         if isCluster { clusterAnchoredTop = top }
         let y = max(visible.minY + 8, top - height)
         let target = NSRect(x: x, y: y, width: width, height: height)
 
-        // AppKit's alpha/position animation of a transparent glass panel
-        // produces a compositor hitch. Only inner SwiftUI controls animate.
-        panel.setFrame(target, display: false)
+        // A single, interruptible size morph is allowed only for an explicit
+        // page change. No NSPanel alpha animation or sliding window origin.
+        // Disclosure/telemetry never drives this animation.
+        if motion && isSwitch {
+            navigationDeadline = ProcessInfo.processInfo.systemUptime + SidePanelNavigationMotion.duration
+            morphFrame(to: target, token: token)
+        } else {
+            panel.setFrame(target, display: false)
+        }
         panel.alphaValue = 1
+        scrollClusterToTop()
+        if isCluster { resetClusterScrollOnFit = false }
+        if motion && !isSwitch {
+            let entry = CABasicAnimation(keyPath: "transform.translation.x")
+            entry.fromValue = openRight ? -SidePanelNavigationMotion.enterDistance
+                : SidePanelNavigationMotion.enterDistance
+            entry.toValue = 0
+            entry.isAdditive = true
+            entry.duration = SidePanelNavigationMotion.enterDuration
+            entry.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            scrollView.contentView.layer?.add(entry, forKey: pageMotionKey)
+        }
         panel.makeKeyAndOrderFront(nil)
-        if isCluster {
-            scrollClusterToTop()
-            resetClusterScrollOnFit = false
+    }
+
+    /// Own exactly one size animator. A rapid click cancels it and retargets
+    /// from the currently displayed frame rather than its stale destination.
+    private func morphFrame(to target: NSRect, token: UUID) {
+        let start = panel.frame
+        guard start != target else { return }
+        let began = ProcessInfo.processInfo.systemUptime
+        let duration = SidePanelNavigationMotion.duration
+        frameMotionTask = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled, self.transition == token {
+                let progress = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
+                let frame = SidePanelNavigationMotion.interpolatedFrame(
+                    from: start, to: target, progress: progress)
+                self.panel.setFrame(frame, display: true)
+                if progress >= 1 {
+                    self.frameMotionTask = nil
+                    return
+                }
+                do { try await Task.sleep(for: .milliseconds(16)) }
+                catch { return }
+            }
         }
     }
 
@@ -208,16 +284,22 @@ import Combine
         // moving the entire glass container during every disclosure.
         clusterFitTask?.cancel()
         let token = transition
-        let remaining = clusterDisclosureAnimationDeadline
+        let remaining = max(clusterDisclosureAnimationDeadline, navigationDeadline)
             - ProcessInfo.processInfo.systemUptime
         let delayMilliseconds = remaining > 0
-            ? max(1, Int((remaining * 1000).rounded(.up))) : 75
+            ? max(16, Int((remaining * 1000).rounded(.up)) + 16) : 75
         clusterFitTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(delayMilliseconds)) }
             catch { return }
             guard let self, self.transition == token,
                   self.openedKind == .cluster, self.panel.isVisible,
                   let visible = (self.parentWindow?.screen ?? self.panel.screen)?.visibleFrame else {
+                return
+            }
+            // The geometry driver owns the panel until the page transition
+            // ends. A layout preference must never race its final frame.
+            if self.frameMotionTask != nil {
+                self.scheduleClusterFit()
                 return
             }
             let width = SidePanelLayout.width(for: .cluster)
@@ -288,19 +370,48 @@ import Combine
         if openedKind == .cluster {
             ClusterMonitorService.shared.setPanelVisible(false)
         }
-        // A native NSPanel fade remains in-flight after an immediate reopen:
-        // its old animator can overwrite the new alpha and flash the glass.
-        // Hiding/unmounting in one transaction makes rapid switching stable.
         transition = UUID()
+        let token = transition
         openedKind = nil
+        frameMotionTask?.cancel()
+        frameMotionTask = nil
+        closeMotionTask?.cancel()
+        closeMotionTask = nil
         clusterFitTask?.cancel()
         clusterFitTask = nil
         measuredClusterContentHeight = 0
         resetClusterScrollOnFit = false
         clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
+        navigationDeadline = 0
         clusterAnchoredTop = nil
-        panel.orderOut(nil)
-        host.rootView = AnyView(EmptyView())
+        scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
+        // Keep the glass itself opaque. Only the content retreats; an
+        // interrupted close cancels this task before it can hide a reopened page.
+        guard animated, panel.isVisible,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            panel.orderOut(nil)
+            host.rootView = AnyView(EmptyView())
+            return
+        }
+        let leave = CABasicAnimation(keyPath: "transform.translation.x")
+        leave.fromValue = 0
+        leave.toValue = openedOnRight ? -SidePanelNavigationMotion.enterDistance
+            : SidePanelNavigationMotion.enterDistance
+        leave.isAdditive = true
+        leave.duration = SidePanelNavigationMotion.enterDuration
+        leave.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        leave.fillMode = .forwards
+        leave.isRemovedOnCompletion = false
+        scrollView.contentView.layer?.add(leave, forKey: pageMotionKey)
+        closeMotionTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(200)) }
+            catch { return }
+            guard let self, self.transition == token, !Task.isCancelled else { return }
+            self.panel.orderOut(nil)
+            self.scrollView.contentView.layer?.removeAnimation(forKey: self.pageMotionKey)
+            self.host.rootView = AnyView(EmptyView())
+            self.closeMotionTask = nil
+        }
     }
 }

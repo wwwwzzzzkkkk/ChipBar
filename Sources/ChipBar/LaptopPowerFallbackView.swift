@@ -84,7 +84,8 @@ struct LaptopPowerFallbackView: View {
             let diag = reading.diagnostics
             VStack(alignment: .leading, spacing: 5) {
                 Text("PDTR: \(format(diag.adapterPDTR))  ·  PSTR: \(format(diag.systemPSTR))")
-                Text("PPBR: \(format(diag.batteryPPBR))")
+                Text("PPBR: \(format(diag.batteryPPBR))  ·  B0AP: \(format(diag.batteryB0APMilliwatts.map { $0 / 1000 }))")
+                Text("AppleSmartBattery: \(format(diag.registryBatteryWatts))")
                 let current = diag.batteryCurrentB0AC.map {
                     String(format: "%.0f mA", $0)
                 } ?? "—"
@@ -149,8 +150,8 @@ struct LaptopPowerFallbackView: View {
                     active: active,
                     internalTitle: "系统功率")
                 Text(ChipBarLocale.choose(
-                    "System-to-chip split only; adapter-to-battery flow unavailable.",
-                    "仅显示系统至芯片的分流；适配器与电池之间的流向暂不可用。"))
+                    "System-to-chip flow is independently valid.",
+                    "已验证系统至芯片的功率分流。"))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             } else {
@@ -164,23 +165,36 @@ struct LaptopPowerFallbackView: View {
                     .padding(.vertical, 12)
             }
 
-            if reading.batteryWatts == nil {
-                Label(ChipBarLocale.choose(
-                    "Battery charge/discharge watts unavailable. This does not imply 0 W.",
-                    "电池充放电功率暂无读数，不代表电池功率为 0 W。"),
-                    systemImage: "battery.100percent")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if mode != .complete {
-                Label(ChipBarLocale.choose(
-                    "Power-source samples are not consistent enough for a battery flow.",
-                    "电源分项读数暂不一致，因此没有绘制电池分流。"),
-                    systemImage: "exclamationmark.circle")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            let reason: String = {
+                if reading.batteryWatts == nil {
+                    return ChipBarLocale.choose("No valid battery power sample; unknown is not 0 W.",
+                                                "未取得有效电池功率读数；未知不代表 0 W。")
+                }
+                if reading.onAdapter && reading.adapterWatts == nil {
+                    return ChipBarLocale.choose("Adapter input measurement is missing.",
+                                                "缺少适配器输入功率读数。")
+                }
+                if reading.isCharging && (reading.batteryWatts ?? 0) <= 0.5 {
+                    return ChipBarLocale.choose("Charging status and sampled battery power disagree.",
+                                                "充电状态与电池功率读数暂不一致。")
+                }
+                return ChipBarLocale.choose("Independent samples do not yet support a consistent complete flow.",
+                                            "独立采样值暂未满足完整功率流向的校验条件。")
+            }()
+            HStack(spacing: 6) {
+                Text(ChipBarLocale.choose("Battery net power", "电池净功率"))
+                Spacer(minLength: 0)
+                Text(format(reading.batteryWatts)).monospacedDigit()
             }
+            .font(.caption.weight(.medium))
+            if reading.diagnostics.batterySource == "AppleSmartBattery (cached)" {
+                Text(ChipBarLocale.choose("Battery sample may lag (macOS cache).", "macOS 电池缓存读数可能有延迟。"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Label(reason, systemImage: "info.circle")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             diagnosticDisclosure
         }
