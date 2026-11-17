@@ -19,26 +19,16 @@ struct ClusterSidecarSizingTests {
             order: [.cluster, .powerSupply]))
     }
 
-    @Test func windowMorphKeepsSharedTopAndNearEdgeWithoutOvershoot() {
-        let start = CGRect(x: 500, y: 600, width: 314, height: 250)
+    @Test func nativeWindowGeometryIsCommittedOnlyIfChanged() {
+        let current = CGRect(x: 500, y: 600, width: 314, height: 250)
         let target = CGRect(x: 500, y: 210, width: 420, height: 640)
-        #expect(SidePanelNavigationMotion.interpolatedFrame(
-            from: start, to: target, progress: 0) == start)
-        #expect(SidePanelNavigationMotion.interpolatedFrame(
-            from: start, to: target, progress: 1) == target)
-        let halfway = SidePanelNavigationMotion.interpolatedFrame(
-            from: start, to: target, progress: 0.5)
-        #expect(abs(halfway.maxY - start.maxY) < 0.001)
-        #expect(halfway.minX == start.minX)
-        #expect(halfway.height > start.height && halfway.height < target.height)
-        let reversed = SidePanelNavigationMotion.interpolatedFrame(
-            from: halfway, to: start, progress: 0)
-        #expect(reversed == halfway)
-        let leftTarget = CGRect(x: 394, y: 210, width: 420, height: 640)
-        let leftHalfway = SidePanelNavigationMotion.interpolatedFrame(
-            from: start, to: leftTarget, progress: 0.4)
-        #expect(abs(leftHalfway.maxX - start.maxX) < 0.001)
-        #expect(abs(leftHalfway.maxY - start.maxY) < 0.001)
+        #expect(!SidePanelNavigationMotion.needsFrameCommit(from: current, to: current))
+        #expect(SidePanelNavigationMotion.needsFrameCommit(from: current, to: target))
+        #expect(!SidePanelNavigationMotion.needsFrameCommit(from: target, to: target))
+        #expect(SidePanelNavigationMotion.edgeOffset(on: .right) < 0)
+        #expect(SidePanelNavigationMotion.edgeOffset(on: .left) > 0)
+        #expect(abs(SidePanelNavigationMotion.edgeOffset(on: .right, relocating: true))
+            > abs(SidePanelNavigationMotion.edgeOffset(on: .right)))
     }
 
     @Test func sidecarUsesLeftWhenDestinationWidthCannotFitOnRight() throws {
@@ -91,17 +81,14 @@ struct ClusterSidecarSizingTests {
             parent: home, visible: screen, preferredWidth: 314, preferredHeight: 250))
         let left = try #require(SidePanelPlacement.choose(
             parent: home, visible: screen, preferredWidth: 420, preferredHeight: 640))
-        let outgoing = SidePanelPlacement.folded(right.frame, side: right.side)
-        let incoming = SidePanelPlacement.folded(left.frame, side: left.side)
-        for step in 0...20 {
-            let progress = Double(step) / 20
-            let oldFrame = SidePanelNavigationMotion.interpolatedFrame(
-                from: right.frame, to: outgoing, progress: progress)
-            let newFrame = SidePanelNavigationMotion.interpolatedFrame(
-                from: incoming, to: left.frame, progress: progress)
-            #expect(SidePanelPlacement.isLegal(oldFrame, beside: home, visible: screen))
-            #expect(SidePanelPlacement.isLegal(newFrame, beside: home, visible: screen))
-        }
+        // Production keeps these legal native frames fixed throughout
+        // the content animation, and moves between them only while hidden.
+        #expect(SidePanelPlacement.isLegal(right.frame, beside: home, visible: screen))
+        #expect(SidePanelPlacement.isLegal(left.frame, beside: home, visible: screen))
+        #expect(SidePanelPlacement.requiresRelocation(
+            from: right.frame, to: left, parent: home, visible: screen))
+        #expect(!SidePanelPlacement.requiresRelocation(
+            from: left.frame, to: left, parent: home, visible: screen))
         let formerlyClamped = CGRect(x: screen.maxX - 8 - 420, y: 280, width: 420, height: 640)
         #expect(formerlyClamped.intersects(home))
         #expect(SidePanelPlacement.requiresRelocation(
