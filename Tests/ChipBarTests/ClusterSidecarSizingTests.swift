@@ -10,6 +10,37 @@ struct ClusterSidecarSizingTests {
         #expect(SidePanelLayout.clusterDisclosureAnimationDuration > 0)
     }
 
+    @Test func moduleSwitchDirectionFollowsTileArrangement() {
+        #expect(SidePanelNavigationMotion.forward(from: .externalDisk, to: .power))
+        #expect(SidePanelNavigationMotion.forward(from: .power, to: .cluster))
+        #expect(!SidePanelNavigationMotion.forward(from: .cluster, to: .power))
+        #expect(!SidePanelNavigationMotion.forward(from: .power, to: .power))
+        #expect(SidePanelNavigationMotion.forward(from: .cluster, to: .power,
+            order: [.cluster, .powerSupply]))
+    }
+
+    @Test func windowMorphKeepsSharedTopAndNearEdgeWithoutOvershoot() {
+        let start = CGRect(x: 500, y: 600, width: 314, height: 250)
+        let target = CGRect(x: 500, y: 210, width: 420, height: 640)
+        #expect(SidePanelNavigationMotion.interpolatedFrame(
+            from: start, to: target, progress: 0) == start)
+        #expect(SidePanelNavigationMotion.interpolatedFrame(
+            from: start, to: target, progress: 1) == target)
+        let halfway = SidePanelNavigationMotion.interpolatedFrame(
+            from: start, to: target, progress: 0.5)
+        #expect(abs(halfway.maxY - start.maxY) < 0.001)
+        #expect(halfway.minX == start.minX)
+        #expect(halfway.height > start.height && halfway.height < target.height)
+        let reversed = SidePanelNavigationMotion.interpolatedFrame(
+            from: halfway, to: start, progress: 0)
+        #expect(reversed == halfway)
+        let leftTarget = CGRect(x: 394, y: 210, width: 420, height: 640)
+        let leftHalfway = SidePanelNavigationMotion.interpolatedFrame(
+            from: start, to: leftTarget, progress: 0.4)
+        #expect(abs(leftHalfway.maxX - start.maxX) < 0.001)
+        #expect(abs(leftHalfway.maxY - start.maxY) < 0.001)
+    }
+
     @Test func taskDisclosurePinsWindowAndSmallFirstFitCorrectionsAreIgnored() {
         #expect(!ClusterSidecarSizing.shouldResizeWindow(
             from: 420, to: 780, available: 1100, userDisclosurePinned: true))
