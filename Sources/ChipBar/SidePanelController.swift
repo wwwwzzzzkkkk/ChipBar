@@ -25,6 +25,9 @@ import QuartzCore
     private var closeMotionTask: Task<Void, Never>?
     private var navigationDeadline: TimeInterval = 0
     private var openedOnRight = true
+    private var parentGeometrySubscription: AnyCancellable?
+    private var lastParentHorizontalFrame: CGRect?
+    private var lastVisibleFrame: CGRect?
     private let pageMotionKey = "chipbar.sidecar.page-motion"
     private var clusterFitTask: Task<Void, Never>?
     private var measuredClusterContentHeight: CGFloat = 0
@@ -115,11 +118,53 @@ import QuartzCore
                     + SidePanelLayout.clusterDisclosureAnimationDuration + 0.02
                 self.scheduleClusterFit()
             }
+        // Re-evaluate only horizontal geometry and display bounds, not every
+        // telemetry-driven change of the dashboard's intrinsic height.
+        let center = NotificationCenter.default
+        parentGeometrySubscription = Publishers.Merge4(
+            center.publisher(for: NSWindow.didMoveNotification),
+            center.publisher(for: NSWindow.didResizeNotification),
+            center.publisher(for: NSWindow.didChangeScreenNotification),
+            center.publisher(for: NSApplication.didChangeScreenParametersNotification)
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] note in
+            guard let self, let parent = self.parentWindow,
+                  note.name == NSApplication.didChangeScreenParametersNotification
+                    || (note.object as? NSWindow) === parent,
+                  self.panel.isVisible, let kind = self.state.sidePanel,
+                  let visible = (parent.screen ?? NSScreen.main)?.visibleFrame else { return }
+            let horizontal = CGRect(x: parent.frame.minX, y: 0,
+                                    width: parent.frame.width, height: 0)
+            guard self.lastParentHorizontalFrame != horizontal
+                    || self.lastVisibleFrame != visible else { return }
+            self.show(kind, beside: parent)
+        }
         // The hosted view is mounted on demand to avoid reading processes or SMC on startup.
     }
 
     func show(_ kind: DashboardSidePanelKind, beside parent: NSWindow) {
+        present(kind, beside: parent, unfolding: false)
+    }
+
+    private func present(_ kind: DashboardSidePanelKind, beside parent: NSWindow,
+                         unfolding: Bool) {
         guard let screen = parent.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let width = SidePanelLayout.width(for: kind)
+        lastParentHorizontalFrame = CGRect(x: parent.frame.minX, y: 0,
+                                           width: parent.frame.width, height: 0)
+        lastVisibleFrame = visible
+        guard let hint = SidePanelPlacement.choose(parent: parent.frame, visible: visible,
+            preferredWidth: width, preferredHeight: SidePanelLayout.height(for: kind)) else {
+            // Do not cover Home when neither side has a usable viewport.
+            hide(animated: false)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.state.sidePanel == kind else { return }
+                self.onClose()
+            }
+            return
+        }
         let priorKind = openedKind
         let wasVisible = panel.isVisible
         let isSwitch = wasVisible && priorKind != nil && priorKind != kind
@@ -129,6 +174,40 @@ import QuartzCore
         closeMotionTask?.cancel()
         closeMotionTask = nil
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
+
+        // A visible cross-screen sweep would cover Home. Fold on the old
+        // side, transfer while hidden, and expand on the new side. Both
+        // visible legs lie strictly inside their own free intervals.
+        var expandAtDestination = unfolding
+        if wasVisible && SidePanelPlacement.requiresRelocation(
+            from: panel.frame, to: hint, parent: parent.frame) {
+            let oldFrame = panel.frame
+            let safeBounds = visible.insetBy(dx: SidePanelPlacement.edgeInset,
+                                             dy: SidePanelPlacement.edgeInset)
+            if motion, !unfolding, safeBounds.contains(oldFrame),
+               let oldSide = SidePanelPlacement.side(of: oldFrame, beside: parent.frame) {
+                transition = UUID()
+                let token = transition
+                clusterFitTask?.cancel()
+                clusterFitTask = nil
+                navigationDeadline = ProcessInfo.processInfo.systemUptime
+                    + SidePanelNavigationMotion.relocationDuration
+                morphFrame(to: SidePanelPlacement.folded(oldFrame, side: oldSide),
+                           token: token, duration: SidePanelNavigationMotion.relocationDuration) {
+                    [weak self, weak parent] in
+                    guard let self, let parent, self.transition == token else { return }
+                    self.panel.orderOut(nil)
+                    self.present(kind, beside: parent, unfolding: true)
+                }
+                return
+            }
+            // A display change or older invalid position can already
+            // intersect Home. Remove it immediately rather than animating
+            // an invalid frame; animate only its arrival on the legal side.
+            panel.orderOut(nil)
+            expandAtDestination = motion
+        }
+        let switchingInPlace = isSwitch && panel.isVisible
         // Discovery is activated before the first intrinsic measurement.
         if kind == .cluster {
             ClusterMonitorService.shared.setPanelVisible(true)
@@ -148,13 +227,12 @@ import QuartzCore
         openedKind = kind
         scrollView.verticalScrollElasticity = kind == .cluster ? .none : .automatic
         scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = hint.needsHorizontalScroll
         parentWindow = parent
-        let visible = screen.visibleFrame
 
         panel.appearance = parent.appearance
         host.appearance = parent.appearance
         panel.contentView?.appearance = parent.appearance
-        let width = SidePanelLayout.width(for: kind)
         let isCluster = kind == .cluster
 
         // Render the actual page and resolve the @Published selection race
@@ -165,7 +243,7 @@ import QuartzCore
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        if motion, isSwitch, let priorKind {
+        if motion, switchingInPlace, let priorKind {
             let push = CATransition()
             push.type = .push
             push.subtype = SidePanelNavigationMotion.forward(from: priorKind, to: kind,
@@ -193,37 +271,32 @@ import QuartzCore
         } else {
             desiredHeight = SidePanelLayout.height(for: kind)
         }
-        let height = isCluster
-            ? ClusterSidecarSizing.windowHeight(content: desiredHeight,
-                                                available: visible.height)
-            : min(desiredHeight, max(200, visible.height - 16))
+        let preferredHeight = isCluster
+            ? ClusterSidecarSizing.windowHeight(content: desiredHeight, available: visible.height)
+            : desiredHeight
+        guard let placement = SidePanelPlacement.choose(
+            parent: parent.frame, visible: visible, preferredWidth: width,
+            preferredHeight: preferredHeight,
+            top: switchingInPlace ? panel.frame.maxY : parent.frame.maxY) else { return }
+        let target = placement.frame
+        let height = target.height
         host.setFrameSize(NSSize(width: width, height: max(desiredHeight, height)))
-        if isCluster {
-            scrollView.hasVerticalScroller = desiredHeight > height + 2
-        }
+        scrollView.hasVerticalScroller = desiredHeight > height + 2
+        scrollView.hasHorizontalScroller = placement.needsHorizontalScroll
         host.layoutSubtreeIfNeeded()
 
-        let spacing: CGFloat = 9
-        let rightSpace = visible.maxX - parent.frame.maxX - 8
-        let leftSpace = parent.frame.minX - visible.minX - 8
-        // A page switch must not re-anchor to a parent window that has just
-        // changed layout. Keep the existing near edge and top during the morph.
-        let openRight = isSwitch ? openedOnRight :
-            (rightSpace >= width + spacing || rightSpace >= leftSpace)
+        let openRight = placement.side == .right
         openedOnRight = openRight
-        let desiredX = isSwitch
-            ? (openRight ? panel.frame.minX : panel.frame.maxX - width)
-            : (openRight ? parent.frame.maxX + spacing : parent.frame.minX - width - spacing)
-        let x = min(max(visible.minX + 8, desiredX), visible.maxX - width - 8)
-        let top = min(visible.maxY - 8, isSwitch ? panel.frame.maxY : parent.frame.maxY)
-        if isCluster { clusterAnchoredTop = top }
-        let y = max(visible.minY + 8, top - height)
-        let target = NSRect(x: x, y: y, width: width, height: height)
+        if isCluster { clusterAnchoredTop = target.maxY }
 
-        // A single, interruptible size morph is allowed only for an explicit
-        // page change. No NSPanel alpha animation or sliding window origin.
-        // Disclosure/telemetry never drives this animation.
-        if motion && isSwitch {
+        // Ordinary same-side switches interpolate only legal frames.
+        // Across sides the arrival unfolds from the safe near edge.
+        if motion && expandAtDestination {
+            panel.setFrame(SidePanelPlacement.folded(target, side: placement.side), display: false)
+            navigationDeadline = ProcessInfo.processInfo.systemUptime
+                + SidePanelNavigationMotion.duration
+            morphFrame(to: target, token: token)
+        } else if motion && switchingInPlace {
             navigationDeadline = ProcessInfo.processInfo.systemUptime + SidePanelNavigationMotion.duration
             morphFrame(to: target, token: token)
         } else {
@@ -232,7 +305,7 @@ import QuartzCore
         panel.alphaValue = 1
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
-        if motion && !isSwitch {
+        if motion && !switchingInPlace && !expandAtDestination {
             let entry = CABasicAnimation(keyPath: "transform.translation.x")
             entry.fromValue = openRight ? -SidePanelNavigationMotion.enterDistance
                 : SidePanelNavigationMotion.enterDistance
@@ -247,11 +320,13 @@ import QuartzCore
 
     /// Own exactly one size animator. A rapid click cancels it and retargets
     /// from the currently displayed frame rather than its stale destination.
-    private func morphFrame(to target: NSRect, token: UUID) {
+    private func morphFrame(to target: NSRect, token: UUID,
+                            duration: TimeInterval = SidePanelNavigationMotion.duration,
+                            completion: (() -> Void)? = nil) {
         let start = panel.frame
-        guard start != target else { return }
         let began = ProcessInfo.processInfo.systemUptime
-        let duration = SidePanelNavigationMotion.duration
+        // Always complete asynchronously, even for equal frames, so a new
+        // relocation cannot replace its own task before the caller returns.
         frameMotionTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled, self.transition == token {
                 let progress = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
@@ -260,6 +335,7 @@ import QuartzCore
                 self.panel.setFrame(frame, display: true)
                 if progress >= 1 {
                     self.frameMotionTask = nil
+                    completion?()
                     return
                 }
                 do { try await Task.sleep(for: .milliseconds(16)) }
@@ -316,6 +392,7 @@ import QuartzCore
             let height = resizeWindow ? proposed : old.height
             let clip = self.scrollView.contentView
             let previousScrollY = clip.bounds.origin.y
+            let previousScrollX = clip.bounds.origin.x
 
             // The scroll document expands to hold all real task rows. A user
             // disclosure never resizes/repositions NSPanel: its scroll viewport
@@ -329,7 +406,7 @@ import QuartzCore
                     visibleMaxY: visible.maxY)
                 let y = ClusterSidecarSizing.bottomY(
                     anchoredTop: top, height: height, visibleMinY: visible.minY)
-                let frame = NSRect(x: old.minX, y: y, width: width, height: height)
+                let frame = NSRect(x: old.minX, y: y, width: old.width, height: height)
                 self.panel.setFrame(frame, display: true)
             }
             self.scrollView.layoutSubtreeIfNeeded()
@@ -343,8 +420,11 @@ import QuartzCore
                 let offset = ClusterSidecarSizing.preservedScrollOffset(
                     previousScrollY, documentHeight: self.host.frame.height,
                     viewportHeight: clip.bounds.height, isFlipped: self.host.isFlipped)
-                if abs(clip.bounds.origin.y - offset) > 0.5 {
-                    clip.scroll(to: NSPoint(x: 0, y: offset))
+                let horizontal = min(max(0, previousScrollX),
+                                     max(0, self.host.frame.width - clip.bounds.width))
+                if abs(clip.bounds.origin.y - offset) > 0.5
+                    || abs(clip.bounds.origin.x - horizontal) > 0.5 {
+                    clip.scroll(to: NSPoint(x: horizontal, y: offset))
                     self.scrollView.reflectScrolledClipView(clip)
                 }
             }
