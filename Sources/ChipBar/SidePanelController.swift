@@ -137,8 +137,7 @@ import QuartzCore
         }
         transition = UUID()
         let token = transition
-        navigationDeadline = motion && isSwitch
-            ? ProcessInfo.processInfo.systemUptime + SidePanelNavigationMotion.duration : 0
+        navigationDeadline = 0
         clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
         clusterFitTask?.cancel()
@@ -163,13 +162,17 @@ import QuartzCore
         // shell after a 90ms delay caused a second visible composition pass.
         // The clip layer is the only surface that transitions. Its old and new
         // content slide inside the existing rounded glass material.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         if motion, isSwitch, let priorKind {
             let push = CATransition()
             push.type = .push
-            push.subtype = SidePanelNavigationMotion.forward(from: priorKind, to: kind)
+            push.subtype = SidePanelNavigationMotion.forward(from: priorKind, to: kind,
+                order: DashboardTileLayoutModel.shared.arrangement.order)
                 ? .fromRight : .fromLeft
             push.duration = SidePanelNavigationMotion.duration
-            push.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.8, 0.25, 1)
+            push.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             scrollView.contentView.layer?.add(push, forKey: pageMotionKey)
         }
         host.setFrameSize(NSSize(width: width, height: SidePanelLayout.height(for: kind)))
@@ -221,12 +224,12 @@ import QuartzCore
         // page change. No NSPanel alpha animation or sliding window origin.
         // Disclosure/telemetry never drives this animation.
         if motion && isSwitch {
+            navigationDeadline = ProcessInfo.processInfo.systemUptime + SidePanelNavigationMotion.duration
             morphFrame(to: target, token: token)
         } else {
             panel.setFrame(target, display: false)
         }
         panel.alphaValue = 1
-        panel.makeKeyAndOrderFront(nil)
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
         if motion && !isSwitch {
@@ -239,6 +242,7 @@ import QuartzCore
             entry.timingFunction = CAMediaTimingFunction(name: .easeOut)
             scrollView.contentView.layer?.add(entry, forKey: pageMotionKey)
         }
+        panel.makeKeyAndOrderFront(nil)
     }
 
     /// Own exactly one size animator. A rapid click cancels it and retargets
@@ -251,12 +255,8 @@ import QuartzCore
         frameMotionTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled, self.transition == token {
                 let progress = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
-                let eased = CGFloat(DisclosurePanelSizing.easeInOutProgress(progress))
-                func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * eased }
-                let frame = NSRect(x: lerp(start.minX, target.minX),
-                                   y: lerp(start.minY, target.minY),
-                                   width: lerp(start.width, target.width),
-                                   height: lerp(start.height, target.height))
+                let frame = SidePanelNavigationMotion.interpolatedFrame(
+                    from: start, to: target, progress: progress)
                 self.panel.setFrame(frame, display: true)
                 if progress >= 1 {
                     self.frameMotionTask = nil
@@ -294,6 +294,12 @@ import QuartzCore
             guard let self, self.transition == token,
                   self.openedKind == .cluster, self.panel.isVisible,
                   let visible = (self.parentWindow?.screen ?? self.panel.screen)?.visibleFrame else {
+                return
+            }
+            // The geometry driver owns the panel until the page transition
+            // ends. A layout preference must never race its final frame.
+            if self.frameMotionTask != nil {
+                self.scheduleClusterFit()
                 return
             }
             let width = SidePanelLayout.width(for: .cluster)
@@ -395,12 +401,15 @@ import QuartzCore
         leave.isAdditive = true
         leave.duration = SidePanelNavigationMotion.enterDuration
         leave.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        leave.fillMode = .forwards
+        leave.isRemovedOnCompletion = false
         scrollView.contentView.layer?.add(leave, forKey: pageMotionKey)
         closeMotionTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(200)) }
             catch { return }
             guard let self, self.transition == token, !Task.isCancelled else { return }
             self.panel.orderOut(nil)
+            self.scrollView.contentView.layer?.removeAnimation(forKey: self.pageMotionKey)
             self.host.rootView = AnyView(EmptyView())
             self.closeMotionTask = nil
         }
