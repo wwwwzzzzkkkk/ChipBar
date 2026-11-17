@@ -135,7 +135,7 @@ import QuartzCore
                   self.panel.isVisible, let kind = self.state.sidePanel,
                   let visible = (parent.screen ?? NSScreen.main)?.visibleFrame else { return }
             let horizontal = CGRect(x: parent.frame.minX, y: 0,
-                                    width: parent.frame.width, height: 0)
+                                    width: parent.frame.width, height: 1)
             guard self.lastParentHorizontalFrame != horizontal
                     || self.lastVisibleFrame != visible else { return }
             self.show(kind, beside: parent)
@@ -153,7 +153,7 @@ import QuartzCore
         let visible = screen.visibleFrame
         let width = SidePanelLayout.width(for: kind)
         lastParentHorizontalFrame = CGRect(x: parent.frame.minX, y: 0,
-                                           width: parent.frame.width, height: 0)
+                                           width: parent.frame.width, height: 1)
         lastVisibleFrame = visible
         guard let hint = SidePanelPlacement.choose(parent: parent.frame, visible: visible,
             preferredWidth: width, preferredHeight: SidePanelLayout.height(for: kind)) else {
@@ -180,7 +180,7 @@ import QuartzCore
         // visible legs lie strictly inside their own free intervals.
         var expandAtDestination = unfolding
         if wasVisible && SidePanelPlacement.requiresRelocation(
-            from: panel.frame, to: hint, parent: parent.frame) {
+            from: panel.frame, to: hint, parent: parent.frame, visible: visible) {
             let oldFrame = panel.frame
             let safeBounds = visible.insetBy(dx: SidePanelPlacement.edgeInset,
                                              dy: SidePanelPlacement.edgeInset)
@@ -296,7 +296,7 @@ import QuartzCore
             navigationDeadline = ProcessInfo.processInfo.systemUptime
                 + SidePanelNavigationMotion.duration
             morphFrame(to: target, token: token)
-        } else if motion && switchingInPlace {
+        } else if motion && panel.isVisible && panel.frame != target {
             navigationDeadline = ProcessInfo.processInfo.systemUptime + SidePanelNavigationMotion.duration
             morphFrame(to: target, token: token)
         } else {
@@ -305,7 +305,7 @@ import QuartzCore
         panel.alphaValue = 1
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
-        if motion && !switchingInPlace && !expandAtDestination {
+        if motion && !wasVisible && !expandAtDestination {
             let entry = CABasicAnimation(keyPath: "transform.translation.x")
             entry.fromValue = openRight ? -SidePanelNavigationMotion.enterDistance
                 : SidePanelNavigationMotion.enterDistance
