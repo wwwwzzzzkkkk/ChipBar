@@ -88,9 +88,8 @@ enum SidePanelPlacement {
         return nil
     }
 
-    /// A cross-side transfer must never sweep a visible window across Home.
-    /// Fold the departing surface toward its near edge and unfold at the
-    /// other edge; the intervening relocation occurs while ordered out.
+    /// Legacy geometry helper used by regression fixtures. Production now
+    /// animates the clipped content instead of folding the native window.
     static func folded(_ frame: CGRect, side: Side) -> CGRect {
         let width = min(frame.width, 22)
         return CGRect(x: side == .right ? frame.minX : frame.maxX - width,
@@ -121,10 +120,24 @@ enum SidePanelOpeningPolicy {
 /// Direction follows the default dashboard navigation order. One short
 /// content transition, never a transition on the translucent NSPanel.
 enum SidePanelNavigationMotion {
-    static let duration: TimeInterval = 0.28
-    static let enterDuration: TimeInterval = 0.20
-    static let relocationDuration: TimeInterval = 0.14
-    static let enterDistance: CGFloat = 14
+    static let duration: TimeInterval = 0.32
+    static let enterDuration: TimeInterval = 0.26
+    static let relocationDuration: TimeInterval = 0.18
+    static let enterDistance: CGFloat = 22
+    static let relocationDistance: CGFloat = 32
+    static let exitOpacity: Float = 0.12
+
+    /// One native frame commit is enough: the render server owns every
+    /// intermediate content frame, including on high-refresh displays.
+    static func needsFrameCommit(from current: CGRect, to target: CGRect) -> Bool {
+        current != target
+    }
+
+    static func edgeOffset(on side: SidePanelPlacement.Side,
+                           relocating: Bool = false) -> CGFloat {
+        let distance = relocating ? relocationDistance : enterDistance
+        return side == .right ? -distance : distance
+    }
 
     static func tile(_ kind: DashboardSidePanelKind) -> DashboardTile {
         switch kind {
