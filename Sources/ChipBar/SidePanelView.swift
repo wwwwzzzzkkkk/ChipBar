@@ -41,6 +41,68 @@ enum SidePanelLayout {
     }
 }
 
+/// Locate a sidecar in a genuinely free screen interval. Clamping a full
+/// right-hand frame to the screen edge can push it back over the dashboard.
+enum SidePanelPlacement {
+    static let gap: CGFloat = 9
+    static let edgeInset: CGFloat = 8
+    static let minimumViewportWidth: CGFloat = 90
+    enum Side: Equatable { case left, right }
+
+    struct Result: Equatable {
+        let side: Side
+        let frame: CGRect
+        let documentWidth: CGFloat
+        var needsHorizontalScroll: Bool { frame.width + 1 < documentWidth }
+    }
+
+    static func choose(parent: CGRect, visible: CGRect, preferredWidth: CGFloat,
+                       preferredHeight: CGFloat, top: CGFloat? = nil) -> Result? {
+        let bounds = visible.insetBy(dx: edgeInset, dy: edgeInset)
+        guard bounds.width > 0, bounds.height > 0,
+              preferredWidth.isFinite, preferredWidth > 0,
+              preferredHeight.isFinite, preferredHeight > 0 else { return nil }
+        let rightEdge = max(bounds.minX, parent.maxX + gap)
+        let leftEdge = min(bounds.maxX, parent.minX - gap)
+        let right = max(0, bounds.maxX - rightEdge)
+        let left = max(0, leftEdge - bounds.minX)
+        let side: Side
+        // Prefer right only when the FULL destination page fits. A narrower
+        // previous page is not evidence that the next page can fit there.
+        if right >= preferredWidth { side = .right }
+        else if left >= preferredWidth { side = .left }
+        else { side = right >= left ? .right : .left }
+        let available = side == .right ? right : left
+        guard available >= min(minimumViewportWidth, preferredWidth) else { return nil }
+        let width = min(preferredWidth, available)
+        let height = min(preferredHeight, bounds.height)
+        let x = side == .right ? rightEdge : leftEdge - width
+        let y = min(bounds.maxY - height, max(bounds.minY, (top ?? parent.maxY) - height))
+        return Result(side: side, frame: CGRect(x: x, y: y, width: width, height: height),
+                      documentWidth: preferredWidth)
+    }
+
+    static func side(of frame: CGRect, beside parent: CGRect) -> Side? {
+        if frame.minX >= parent.maxX + gap - 0.5 { return .right }
+        if frame.maxX <= parent.minX - gap + 0.5 { return .left }
+        return nil
+    }
+
+    /// A cross-side transfer must never sweep a visible window across Home.
+    /// Fold the departing surface toward its near edge and unfold at the
+    /// other edge; the intervening relocation occurs while ordered out.
+    static func folded(_ frame: CGRect, side: Side) -> CGRect {
+        let width = min(frame.width, 22)
+        return CGRect(x: side == .right ? frame.minX : frame.maxX - width,
+                      y: frame.minY, width: width, height: frame.height)
+    }
+
+    static func requiresRelocation(from frame: CGRect, to result: Result,
+                                   parent: CGRect) -> Bool {
+        side(of: frame, beside: parent) != result.side
+    }
+}
+
 /// Every sidecar mounts the correct real view before its first visible frame.
 /// A delayed placeholder and alpha/position animation make translucent glass
 /// surfaces visibly flicker, even if the data is already available.
