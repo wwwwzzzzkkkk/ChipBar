@@ -175,6 +175,15 @@ public final class SMCReader {
             value = (value << 8) | UInt32(b[0])
             return Double(value)
 
+        case "si32":
+            // Apple Silicon B0AP exposes signed battery power in mW.
+            guard b.count >= 4 else { return nil }
+            var bits = UInt32(b[3])
+            bits = (bits << 8) | UInt32(b[2])
+            bits = (bits << 8) | UInt32(b[1])
+            bits = (bits << 8) | UInt32(b[0])
+            return Double(Int32(bitPattern: bits))
+
         case "sp78", "sp96":
             // SMC signed fixed point, both big-endian: 7.8 / 9.6 formats.
             // PDTR can be sp96 on older MacBook models; without decoding
