@@ -173,6 +173,7 @@ import QuartzCore
         relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
+        let interrupted = contentPresentation()
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
 
         // Never resize a native glass window on a frame timer. The
@@ -193,8 +194,9 @@ import QuartzCore
                 navigationDeadline = ProcessInfo.processInfo.systemUptime
                     + SidePanelNavigationMotion.relocationDuration
                 animateContent(
-                    from: 0, to: SidePanelNavigationMotion.edgeOffset(on: oldSide, relocating: true),
-                    fromOpacity: 1, toOpacity: SidePanelNavigationMotion.exitOpacity,
+                    from: interrupted.offset,
+                    to: SidePanelNavigationMotion.edgeOffset(on: oldSide, relocating: true),
+                    fromOpacity: interrupted.opacity, toOpacity: SidePanelNavigationMotion.exitOpacity,
                     duration: SidePanelNavigationMotion.relocationDuration,
                     entering: false)
                 relocationTask = Task { @MainActor [weak self, weak parent] in
@@ -266,7 +268,8 @@ import QuartzCore
             monitor: monitor, state: state, close: onClose,
             kindOverride: kind,
             onClusterContentHeightChange: { [weak self] height in
-                self?.scheduleClusterFit(measuredHeight: height)
+                guard let self, self.transition == token, kind == .cluster else { return }
+                self.scheduleClusterFit(measuredHeight: height)
             }
         ))
         let desiredHeight: CGFloat
@@ -289,7 +292,8 @@ import QuartzCore
             top: switchingInPlace ? panel.frame.maxY : parent.frame.maxY) else { return }
         let target = placement.frame
         let height = target.height
-        host.setFrameSize(NSSize(width: width, height: max(desiredHeight, height)))
+        let documentSize = NSSize(width: width, height: max(desiredHeight, height))
+        if host.frame.size != documentSize { host.setFrameSize(documentSize) }
         scrollView.hasVerticalScroller = desiredHeight > height + 2
         scrollView.hasHorizontalScroller = placement.needsHorizontalScroll
         host.layoutSubtreeIfNeeded()
@@ -311,7 +315,7 @@ import QuartzCore
         panel.alphaValue = 1
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
-        if motion && !switchingInPlace && (!wasVisible || expandAtDestination) {
+        if motion && !switchingInPlace && (!wasVisible || expandAtDestination || priorKind == nil) {
             animateContent(
                 from: SidePanelNavigationMotion.edgeOffset(on: placement.side,
                                                            relocating: expandAtDestination),
@@ -320,6 +324,13 @@ import QuartzCore
                 entering: true)
         }
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    /// Retarget an interrupted edge transition from the displayed values.
+    private func contentPresentation() -> (offset: CGFloat, opacity: Float) {
+        guard let layer = scrollView.contentView.layer,
+              let shown = layer.presentation() else { return (0, 1) }
+        return (shown.transform.m41 - layer.transform.m41, shown.opacity)
     }
 
     /// Transform and opacity animations affect only the clipped content
@@ -335,6 +346,8 @@ import QuartzCore
         let opacity = CABasicAnimation(keyPath: "opacity")
         opacity.fromValue = fromOpacity
         opacity.toValue = toOpacity
+        slide.duration = duration
+        opacity.duration = duration
         let group = CAAnimationGroup()
         group.animations = [slide, opacity]
         group.duration = duration
@@ -345,8 +358,6 @@ import QuartzCore
             group.fillMode = .forwards
             group.isRemovedOnCompletion = false
         }
-        slide.duration = duration
-        opacity.duration = duration
         layer.add(group, forKey: pageMotionKey)
     }
 
@@ -413,7 +424,7 @@ import QuartzCore
                 let y = ClusterSidecarSizing.bottomY(
                     anchoredTop: top, height: height, visibleMinY: visible.minY)
                 let frame = NSRect(x: old.minX, y: y, width: old.width, height: height)
-                self.panel.setFrame(frame, display: true)
+                self.panel.setFrame(frame, display: false)
             }
             self.scrollView.layoutSubtreeIfNeeded()
             if self.resetClusterScrollOnFit {
@@ -471,6 +482,7 @@ import QuartzCore
         clusterDisclosureAnimationDeadline = 0
         navigationDeadline = 0
         clusterAnchoredTop = nil
+        let interrupted = contentPresentation()
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
         // Keep the glass itself opaque. Only the content retreats; an
         // interrupted close cancels this task before it can hide a reopened page.
@@ -480,9 +492,9 @@ import QuartzCore
             host.rootView = AnyView(EmptyView())
             return
         }
-        animateContent(from: 0,
+        animateContent(from: interrupted.offset,
             to: SidePanelNavigationMotion.edgeOffset(on: openedOnRight ? .right : .left),
-            fromOpacity: 1, toOpacity: SidePanelNavigationMotion.exitOpacity,
+            fromOpacity: interrupted.opacity, toOpacity: SidePanelNavigationMotion.exitOpacity,
             duration: SidePanelNavigationMotion.enterDuration, entering: false)
         closeMotionTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(
