@@ -26,6 +26,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cpu-compare', action='store_true',
                         help='Measure the real GUI probe process while Home is open/closed')
+    parser.add_argument('--sidecar-motion', action='store_true',
+                        help='Alternate power/application sidecards and measure main-run-loop stalls (not display FPS)')
     args = parser.parse_args()
     if args.seconds < 30 or args.spacing_ms < 1 or args.prefill < 0:
         parser.error('seconds must be >= 30 and spacing-ms >= 1')
@@ -34,9 +36,9 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='chipbar-ui-soak-') as directory:
         folder = Path(directory)
-        core = root / 'Sources/ChipBarCore/Metrics.swift'
+        core = sorted((root / 'Sources/ChipBarCore').glob('*.swift'))
         subprocess.run(['xcrun', 'swiftc', '-O', '-emit-library', '-emit-module',
-                        '-module-name', 'ChipBarCore', str(core),
+                        '-module-name', 'ChipBarCore', *map(str, core),
                         '-Xlinker', '-install_name', '-Xlinker', '@rpath/libChipBarCore.dylib',
                         '-o', 'libChipBarCore.dylib'], cwd=folder, check=True)
         sources = []
@@ -57,6 +59,10 @@ def main():
 extension MenuController {
     func soakOpen() { if !panel.isVisible { togglePanel() } }
     func soakClose() { hidePanel(animated: false) }
+    func soakSwitchSidecar(_ index: Int) {
+        guard panel.isVisible else { return }
+        dashboardState.sidePanel = index.isMultiple(of: 2) ? .power : .applications
+    }
     var soakMounted: Bool { dashboardMounted }
     var soakVisible: Bool { panel.isVisible }
     func soakCapture(path: String) throws {
@@ -94,12 +100,38 @@ import SwiftUI
         let duration = Int(CommandLine.arguments[1])!
         let start = Date()
         var records: [[String: Any]] = []
+        let exerciseSidecards = CommandLine.arguments.contains("--sidecar-motion")
+        var switchIndex = 0
+        var lastSwitchSecond = -1
+        var switchCosts: [Double] = []
+        var motionUntil: TimeInterval = 0
+        var lastTick = ProcessInfo.processInfo.systemUptime
+        var transitionGaps: [Double] = []
+        // Measures main-run-loop responsiveness, NOT WindowServer FPS.
+        // Scoped to opt-in motion probes, leaving existing CPU tests unchanged.
+        let motionTimer: Timer? = exerciseSidecards
+            ? Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in
+                MainActor.assumeIsolated {
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if now < motionUntil { transitionGaps.append((now - lastTick) * 1000) }
+                    lastTick = now
+                }
+            } : nil
+        if let motionTimer { RunLoop.main.add(motionTimer, forMode: .common) }
         let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             MainActor.assumeIsolated {
                 let seconds = Int(Date().timeIntervalSince(start))
                 let phase = seconds < duration * 2 / 3 ? "open" : seconds < duration * 5 / 6 ? "closed" : "reopened"
                 if phase == "closed" { controller.soakClose() }
                 else { controller.soakOpen() }
+                if exerciseSidecards, phase == "open", seconds != lastSwitchSecond {
+                    lastSwitchSecond = seconds
+                    let before = ProcessInfo.processInfo.systemUptime
+                    motionUntil = before + 0.55
+                    controller.soakSwitchSidecar(switchIndex)
+                    switchIndex += 1
+                    switchCosts.append((ProcessInfo.processInfo.systemUptime - before) * 1000)
+                }
                 precondition(monitor.history.count <= 600, "history exceeds bound")
                 precondition(controller.soakMounted == (phase != "closed"), "hidden dashboard remains mounted")
                 if seconds % 5 == 0 || seconds >= duration {
@@ -121,6 +153,21 @@ import SwiftUI
                 }
                 if seconds >= duration {
                     try! controller.soakCapture(path: CommandLine.arguments[2])
+                    if exerciseSidecards {
+                        let gaps = transitionGaps.sorted()
+                        let summary: [String: Any] = [
+                            "switchCount": switchCosts.count,
+                            "meanSwitchDispatchMS": switchCosts.reduce(0, +) / Double(max(1, switchCosts.count)),
+                            "maxSwitchDispatchMS": switchCosts.max() ?? 0,
+                            "runLoopGapSamples": gaps.count,
+                            "p95RunLoopGapMS": gaps.isEmpty ? 0 : gaps[Int(Double(gaps.count - 1) * 0.95)],
+                            "gapsOver33MS": gaps.filter { $0 > 33.3 }.count,
+                            "method": "60Hz timer gaps during transitions; not display FPS"
+                        ]
+                        let data = try! JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys])
+                        try! data.write(to: URL(fileURLWithPath: CommandLine.arguments[2] + ".motion.json"))
+                        print("CHIPBAR_SIDECAR_MOTION=" + String(data: data, encoding: .utf8)!)
+                    }
                     let data = try! JSONSerialization.data(withJSONObject: records, options: [.prettyPrinted, .sortedKeys])
                     try! data.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
                     let success = monitor.connected && monitor.history.count > 0
@@ -129,7 +176,7 @@ import SwiftUI
                 }
             }
         }
-        withExtendedLifetime((monitor, controller, timer)) { app.run() }
+        withExtendedLifetime((monitor, controller, timer, motionTimer)) { app.run() }
     }
 }
 ''')
@@ -140,6 +187,8 @@ import SwiftUI
                    '-macmonPath', str(helper), '-interval', '1000']
         if args.legacy_material:
             command.append('--legacy-material')
+        if args.sidecar_motion:
+            command.append('--sidecar-motion')
         if args.cpu_compare:
             # ps reports per-process %CPU. Its exponentially smoothed value is
             # useful for open/closed comparison on the SAME hosted Mac, not a
@@ -183,7 +232,8 @@ import SwiftUI
                     }
             profile = {'host': subprocess.getoutput('sw_vers -productVersion'),
                        'method': 'ps -p <probe_pid> -o %cpu=, 1 Hz; 2s phase warm-up excluded',
-                       'workload': 'local synthetic macmon; GUI panel open/closed/reopened',
+                       'workload': ('synthetic macmon; sidecard motion/open/closed/reopened' if args.sidecar_motion
+                                    else 'local synthetic macmon; GUI panel open/closed/reopened'),
                        'summary': summary, 'samples': samples}
             result_path = args.output.with_suffix('.cpu.json')
             result_path.write_text(json.dumps(profile, indent=2))
