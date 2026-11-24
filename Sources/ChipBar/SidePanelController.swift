@@ -168,25 +168,32 @@ import QuartzCore
         let priorKind = openedKind
         let wasVisible = panel.isVisible
         let isSwitch = wasVisible && priorKind != nil && priorKind != kind
-        let motion = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let wasRelocating = relocationTask != nil
         relocationTask?.cancel()
         relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
         let interrupted = contentPresentation()
-        scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
+
+        let needsRelocation = wasVisible && SidePanelPlacement.requiresRelocation(
+            from: panel.frame, to: hint, parent: parent.frame, visible: visible)
+        let preservingMotion = wasVisible && priorKind == kind && !needsRelocation && !wasRelocating
+            && navigationDeadline > ProcessInfo.processInfo.systemUptime
+        if !preservingMotion {
+            scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
+        }
 
         // Never resize a native glass window on a frame timer. The
         // compositor animates its clipped content; the window changes
         // geometry once, while hidden for a cross-side transfer.
         var expandAtDestination = unfolding
-        if wasVisible && SidePanelPlacement.requiresRelocation(
-            from: panel.frame, to: hint, parent: parent.frame, visible: visible) {
+        if needsRelocation {
             let oldFrame = panel.frame
-            let safeBounds = visible.insetBy(dx: SidePanelPlacement.edgeInset,
-                                             dy: SidePanelPlacement.edgeInset)
-            if motion, !unfolding, safeBounds.contains(oldFrame),
-               let oldSide = SidePanelPlacement.side(of: oldFrame, beside: parent.frame) {
+            let departureVisible = panel.screen?.visibleFrame ?? visible
+            let safeBounds = departureVisible.insetBy(dx: SidePanelPlacement.edgeInset,
+                                                      dy: SidePanelPlacement.edgeInset)
+            if !unfolding, safeBounds.contains(oldFrame), !oldFrame.intersects(parent.frame) {
+                let oldSide: SidePanelPlacement.Side = openedOnRight ? .right : .left
                 transition = UUID()
                 let token = transition
                 clusterFitTask?.cancel()
@@ -215,7 +222,7 @@ import QuartzCore
             // intersect Home. Remove it immediately rather than animating
             // an invalid frame; animate only its arrival on the legal side.
             panel.orderOut(nil)
-            expandAtDestination = motion
+            expandAtDestination = true
         }
         let switchingInPlace = isSwitch && panel.isVisible
         // Discovery is activated before the first intrinsic measurement.
@@ -226,7 +233,7 @@ import QuartzCore
         }
         transition = UUID()
         let token = transition
-        navigationDeadline = 0
+        if !preservingMotion { navigationDeadline = 0 }
         clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
         clusterFitTask?.cancel()
@@ -253,7 +260,7 @@ import QuartzCore
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        if motion, switchingInPlace, let priorKind {
+        if switchingInPlace, let priorKind {
             let push = CATransition()
             push.type = .push
             push.subtype = SidePanelNavigationMotion.forward(from: priorKind, to: kind,
@@ -307,7 +314,9 @@ import QuartzCore
         if SidePanelNavigationMotion.needsFrameCommit(from: panel.frame, to: target) {
             panel.setFrame(target, display: false)
         }
-        if motion {
+        let resumingDeparture = wasVisible && !expandAtDestination && (priorKind == nil || wasRelocating)
+        let arriving = !switchingInPlace && (!wasVisible || expandAtDestination || resumingDeparture)
+        if switchingInPlace || arriving {
             navigationDeadline = ProcessInfo.processInfo.systemUptime
                 + (switchingInPlace ? SidePanelNavigationMotion.duration
                                     : SidePanelNavigationMotion.enterDuration)
@@ -315,13 +324,13 @@ import QuartzCore
         panel.alphaValue = 1
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
-        if motion && !switchingInPlace && (!wasVisible || expandAtDestination || priorKind == nil) {
+        if arriving {
+            let startOffset = resumingDeparture ? interrupted.offset
+                : SidePanelNavigationMotion.edgeOffset(on: placement.side, relocating: expandAtDestination)
+            let startOpacity = resumingDeparture ? interrupted.opacity : SidePanelNavigationMotion.exitOpacity
             animateContent(
-                from: SidePanelNavigationMotion.edgeOffset(on: placement.side,
-                                                           relocating: expandAtDestination),
-                to: 0, fromOpacity: SidePanelNavigationMotion.exitOpacity,
-                toOpacity: 1, duration: SidePanelNavigationMotion.enterDuration,
-                entering: true)
+                from: startOffset, to: 0, fromOpacity: startOpacity, toOpacity: 1,
+                duration: SidePanelNavigationMotion.enterDuration, entering: true)
         }
         panel.makeKeyAndOrderFront(nil)
     }
@@ -486,8 +495,7 @@ import QuartzCore
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
         // Keep the glass itself opaque. Only the content retreats; an
         // interrupted close cancels this task before it can hide a reopened page.
-        guard animated, panel.isVisible,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard animated, panel.isVisible else {
             panel.orderOut(nil)
             host.rootView = AnyView(EmptyView())
             return

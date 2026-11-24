@@ -164,8 +164,7 @@ struct PowerSankeyFlow: View, Animatable {
     private var leftLabel: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(ChipBarLocale.localized(internalTitle))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .semibold))
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value(displayedDistribution.internalWatts))
                     .font(.system(size: 32, weight: .semibold, design: .rounded))
@@ -195,8 +194,7 @@ struct PowerSankeyFlow: View, Animatable {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 Circle().fill(tint).frame(width: 7, height: 7)
-                Text(ChipBarLocale.localized(name)).font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                Text(ChipBarLocale.localized(name)).font(.system(size: 11, weight: .semibold))
             }
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value(watts))
@@ -364,6 +362,7 @@ struct PowerSupplyDetailView: View {
     let active: Bool
     let close: () -> Void
     @ObservedObject private var sampler = ChipBarPowerFlowModel.shared
+    @State(initialValue: false) private var showsLaptopBreakdown: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var reading: ChipBarPowerReading { sampler.reading }
@@ -372,9 +371,12 @@ struct PowerSupplyDetailView: View {
                           chipWatts: sampler.chipWattsAtReading)
     }
     private var mode: PowerSourceMode { PowerSourceMode(reading: reading) }
+    private var laptopTopology: LaptopPowerTopology? {
+        LaptopPowerTopology(reading: reading, chipWatts: sampler.chipWattsAtReading)
+    }
     private var partialReading: Bool {
         reading.hasBattery && (reading.diagnostics.batterySource == "AppleSmartBattery (cached)" ||
-            LaptopPowerTopology(reading: reading, chipWatts: sampler.chipWattsAtReading) == nil)
+            laptopTopology == nil)
     }
     private var supplyTitle: String {
         mode == .battery ? "电池供电" : "外部供电"
@@ -429,19 +431,32 @@ struct PowerSupplyDetailView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack {
+                        let flow = laptopTopology
+                        let laptopFlow = flow.map {
+                            LaptopPowerSankeyFlow(flow: $0, active: active && reading.live,
+                                                  detailsExpanded: $showsLaptopBreakdown)
+                        }
+                        HStack(alignment: .firstTextBaseline) {
                             Text("功率流向").font(.caption.weight(.semibold))
-                            Spacer(minLength: 4)
-                            Text("左 → 右 · 条带粗细 = 瓦数")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
+                            Spacer(minLength: 8)
+                            if let laptopFlow {
+                                laptopFlow.statusLabel
+                            } else {
+                                Text("左 → 右 · 条带粗细 = 瓦数")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                            }
                         }
                         if reading.hasBattery {
-                            if let flow = LaptopPowerTopology(
-                                reading: reading, chipWatts: sampler.chipWattsAtReading) {
-                                LaptopPowerSankeyFlow(flow: flow, active: active && reading.live)
+                            if let flow, let laptopFlow {
+                                laptopFlow
+                                    .id(flow.mode)
+                                    .animation(
+                                        active && reading.live && !reduceMotion
+                                            ? .spring(response: 0.36, dampingFraction: 1) : nil,
+                                        value: flow)
                             } else {
                                 LaptopPowerFallbackView(
                                     reading: reading,

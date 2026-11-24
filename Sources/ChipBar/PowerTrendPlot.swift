@@ -33,7 +33,9 @@ struct PowerTrendPlot: View {
                 GeometryReader { geometry in
                     ForEach(0..<3, id: \.self) { index in
                         Text(index == 2 ? "0" : tick(maximum * Double(2 - index) / 2))
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
                             .frame(width: 27, alignment: .trailing)
                             .position(x: 13.5, y: PowerTrendGeometry.y(
                                 fraction: CGFloat(index) / 2,
@@ -49,7 +51,7 @@ struct PowerTrendPlot: View {
                                 path.move(to: CGPoint(x: 0, y: y))
                                 path.addLine(to: CGPoint(x: geometry.size.width, y: y))
                             }
-                        }.stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                        }.stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
                         line(size: geometry.size)
                             .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                         // A single valid sample, or isolated samples around gaps,

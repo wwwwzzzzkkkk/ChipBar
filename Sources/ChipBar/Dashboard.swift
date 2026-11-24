@@ -373,8 +373,8 @@ struct Dashboard: View {
     private var totalPowerHeadline: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("芯片总功率")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
                 .frame(height: 14, alignment: .topLeading)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 AnimatedMetricValue(value: monitor.connected ? monitor.sample?.total : nil)
@@ -426,6 +426,7 @@ struct Dashboard: View {
                 Text("最近 10 分钟")
                 Spacer()
                 Text(ChipBarLocale.choose("Average \(value(monitor.powerChart.average)) W", "均值 \(value(monitor.powerChart.average)) W"))
+                    .monospacedDigit()
             }
             .font(.system(size: 9))
             .foregroundStyle(.secondary)

@@ -74,7 +74,8 @@ actor ChipBarPowerSampler {
                 directWatts: rawPack,
                 currentMilliAmps: current,
                 voltageMilliVolts: voltage,
-                directMilliWatts: rawB0AP)
+                directMilliWatts: rawB0AP,
+                pluggedInWithoutCharging: battery.connected && !battery.charging)
             // AppleSmartBattery may update more slowly than SMC. Read the
             // published values only when SMC is missing or reports near zero
             // despite an active charge/discharge state. No extra timer.
@@ -205,7 +206,8 @@ actor ChipBarPowerSampler {
     /// current × voltage if the direct sensor is missing or only reports zero.
     /// A real 0 W from either source remains 0 W (not nil).
     static func selectBatteryPower(directWatts: Double?, currentMilliAmps: Double?,
-                                   voltageMilliVolts: Double?, directMilliWatts: Double? = nil)
+                                   voltageMilliVolts: Double?, directMilliWatts: Double? = nil,
+                                   pluggedInWithoutCharging: Bool = false)
         -> (watts: Double, source: String)? {
         let direct = validPackWatts(directWatts)
         let b0ap = validPackWatts(directMilliWatts.map { $0 / 1_000 })
@@ -214,6 +216,13 @@ actor ChipBarPowerSampler {
         // B0AP is the signed battery pack power supported by the Apple
         // Silicon SMC battery driver. Prefer an active signed direct reading.
         if let b0ap, abs(b0ap) > 0.25 { return (b0ap, "B0AP") }
+        // Some Macs report positive PPBR even when both signed battery
+        // sensors agree that the pack is idle or slightly discharging.
+        if pluggedInWithoutCharging, let direct, direct > 0,
+           let b0ap, b0ap <= 0,
+           currentMilliAmps == 0 || (derived.map { (-0.25...0).contains($0) } ?? false) {
+            return (b0ap, "B0AP")
+        }
         if let direct, abs(direct) > 0.25 { return (direct, "PPBR") }
         if let derived, abs(derived) > 0.25 { return (derived, "B0AC/B0AV") }
         if let b0ap { return (b0ap, "B0AP") }

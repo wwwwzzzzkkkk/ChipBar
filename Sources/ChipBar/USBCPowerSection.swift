@@ -25,18 +25,20 @@ struct USBCPowerSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(USBCFormat.watts(snapshot.totalWatts, precision: 2))
-                    .font(.system(size: 27, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text("W")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Text("SMC 输出端")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+            if snapshot.totalWatts != nil {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(USBCFormat.watts(snapshot.totalWatts, precision: 2))
+                        .font(.system(size: 27, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text("W")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Text("SMC 输出端")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if active.count > 1, let total = snapshot.totalWatts, total > 0 {
@@ -59,13 +61,11 @@ struct USBCPowerSection: View {
                 Text("暂未识别到 USB-C 接口")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if active.isEmpty {
                 Text(snapshot.totalWatts == nil ? "尚无可用的 USB-C 输出功率读数" : "当前无 USB-C 对外供电")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 6)
             }
 
             ForEach(active.indices, id: \.self) { index in

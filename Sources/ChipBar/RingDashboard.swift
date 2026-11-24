@@ -22,8 +22,8 @@ struct DashboardRunway: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(title)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
                 .frame(height: 20)
                 .padding(.bottom, 4)
             ZStack {
@@ -32,7 +32,6 @@ struct DashboardRunway: View {
                 Circle()
                     .trim(from: 0, to: fraction)
                     .stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                    .saturation(1.18)
                     .rotationEffect(.degrees(-90))
                     .animation(reduceMotion || !active ? nil :
                         .spring(response: 0.55, dampingFraction: 1), value: fraction)
@@ -60,7 +59,7 @@ struct DashboardRunway: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.85)
                 .frame(height: 16)
         }
         .frame(maxWidth: .infinity)

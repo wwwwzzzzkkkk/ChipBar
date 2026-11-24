@@ -125,6 +125,28 @@ struct PowerSupplyDetailTests {
         #expect(fallback?.watts == 18)
     }
 
+    @Test func pluggedInM1ProRejectsPositivePPBRWhenSignedSensorsAgree() {
+        // Live M1 Pro samples from the idle pack and low-power adapter.
+        for sample in [
+            (adapter: 28.688562393188477, system: 28.69367790222168,
+             ppbr: 1.1022194623947144, b0ap: 0.0, current: 0.0, voltage: 11899.0),
+            (adapter: 6.816970348358154, system: 7.205906391143799,
+             ppbr: 1.5929789543151855, b0ap: -227.0, current: -19.0, voltage: 11967.0)
+        ] {
+            let pack = ChipBarPowerSampler.selectBatteryPower(
+                directWatts: sample.ppbr, currentMilliAmps: sample.current,
+                voltageMilliVolts: sample.voltage, directMilliWatts: sample.b0ap,
+                pluggedInWithoutCharging: true)
+            #expect(pack?.source == "B0AP")
+            #expect(pack?.watts == sample.b0ap / 1_000)
+
+            let frame = ChipBarPowerSampler.laptopSystemFrame(
+                onAdapter: true, adapterWatts: sample.adapter, batteryWatts: pack?.watts,
+                measuredSystemWatts: sample.system)
+            #expect(frame.systemWatts == sample.adapter - sample.b0ap / 1_000)
+        }
+    }
+
     @Test func registryBatteryCurrentPreservesSignAndRejectsContradictions() {
         #expect(ChipBarPowerSampler.signedBatteryCurrent(NSNumber(value: -1500)) == -1500)
         #expect(ChipBarPowerSampler.signedBatteryCurrent(
@@ -191,6 +213,24 @@ struct PowerSupplyDetailTests {
         #expect(chart.otherTop + chart.otherHeight <= LaptopSankeyGeometry.height)
     }
 
+    @Test func laptopSankeyKeepsSmallBranchesVisibleAndJunctionsAligned() {
+        let assist = LaptopSankeyGeometry.make(systemWatts: 10, chargeWatts: 0,
+                                                assistWatts: 9.7, chipWatts: 0.1)
+        let minimum = LaptopSankeyGeometry.minimumRibbonHeight
+        #expect(assist.inputHeight == minimum)
+        #expect(assist.chipHeight == minimum)
+        #expect(assist.chargeHeight == 0)
+        #expect(abs(assist.inputHeight + assist.assistHeight - assist.systemHeight) < 0.001)
+        #expect(abs(assist.chipHeight + assist.otherHeight - assist.systemHeight) < 0.001)
+
+        let charge = LaptopSankeyGeometry.make(systemWatts: 10, chargeWatts: 0.6,
+                                                 assistWatts: 0, chipWatts: 10)
+        #expect(charge.chargeHeight == minimum)
+        #expect(charge.otherHeight == 0)
+        #expect(charge.assistHeight == 0)
+        #expect(abs(charge.systemHeight + charge.chargeHeight - charge.inputHeight) < 0.001)
+    }
+
     @Test func laptopThreeStageAdaptsToBatteryOnlyAdapterOnlyAndCombinedSupply() throws {
         let onBattery = ChipBarPowerReading(
             hasBattery: true, onAdapter: false, isCharging: false, batteryPercent: 40,
@@ -225,7 +265,8 @@ struct PowerSupplyDetailTests {
         #expect(assisted.sourceWatts + assisted.assistWatts == assisted.systemWatts)
         let chart = LaptopSankeyGeometry.make(assisted)
         #expect(abs(chart.systemHeight - chart.inputHeight - chart.assistHeight) < 0.001)
-        #expect(chart.assistTop > chart.leftTop + chart.inputHeight)
+        #expect(chart.leftTop == chart.assistTop + chart.assistHeight + LaptopSankeyGeometry.gap)
+        #expect(chart.chipTop == chart.assistTop + 10)
     }
 
     @Test func batteryDirectPowerRailIsPreferredAndCurrentVoltageIsFallback() {
