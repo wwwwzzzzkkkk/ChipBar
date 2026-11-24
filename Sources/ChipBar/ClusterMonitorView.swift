@@ -36,7 +36,7 @@ struct ClusterOverviewTile: View {
             .frame(maxWidth: .infinity)
             .glassTile(radius: 24, tint: selected ? accent.opacity(0.12) : nil,
                        interactive: true)
-            .contentShape(RoundedRectangle(cornerRadius: 24))
+            .contentShape(RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(24, compact: compact)))
         }
         .buttonStyle(ChipBarPressStyle())
         .accessibilityLabel("计算集群，只读监控")

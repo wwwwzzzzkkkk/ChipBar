@@ -9,9 +9,11 @@ struct GlassTileModifier: ViewModifier {
     let interactive: Bool
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.compactDashboard) private var compact
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
+        RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(radius, compact: compact),
+                         style: .continuous)
     }
 
     @ViewBuilder func body(content: Content) -> some View {
@@ -74,6 +76,7 @@ struct MenuChoiceSurface: ViewModifier {
 /// Wrap the dashboard in exactly one glass coordinator, without changing the
 /// legacy macOS view hierarchy or creating nested glass around chart strokes.
 struct DashboardGlassContainer<Content: View>: View {
+    @Environment(\.compactDashboard) private var compact
     let content: () -> Content
 
     init(@ViewBuilder content: @escaping () -> Content) {
@@ -82,7 +85,8 @@ struct DashboardGlassContainer<Content: View>: View {
 
     @ViewBuilder var body: some View {
         if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: 10) { content() }
+            // Keep the blend distance below the compact mosaic's card gaps.
+            GlassEffectContainer(spacing: compact ? 2 : 10) { content() }
         } else {
             content()
         }

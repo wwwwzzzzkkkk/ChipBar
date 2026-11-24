@@ -26,6 +26,10 @@ enum DashboardLayout {
         max(1, floor(availableHeight * (compact ? 0.90 : 1)))
     }
 
+    static func tileCornerRadius(_ radius: CGFloat, compact: Bool) -> CGFloat {
+        compact ? min(radius, 14) : radius
+    }
+
     static func columns(for tile: DashboardTile, compact: Bool) -> Int {
         compact && (tile == .applications || tile == .cluster) ? 3 : tile.columns
     }
@@ -167,7 +171,7 @@ struct Dashboard: View {
     /// Reorderable six-track mosaic. Stable tile identities preserve
     /// animated gauges and background sampling when tiles move.
     private var monitoringTiles: some View {
-        VStack(alignment: .leading, spacing: state.compactHome ? 6 : 10) {
+        VStack(alignment: .leading, spacing: state.compactHome ? 8 : 10) {
             HStack(spacing: 8) {
                 header
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -190,7 +194,8 @@ struct Dashboard: View {
                 .accessibilityLabel(ChipBarLocale.choose(tileLayout.editing ? "Finish arranging tiles" : "Customize tile layout", tileLayout.editing ? "完成磁贴排列" : "自定义磁贴排列"))
             }
 
-            ChipBarAdaptiveTileLayout(rowGap: state.compactHome ? 6 : 10) {
+            ChipBarAdaptiveTileLayout(columnGap: state.compactHome ? 9 : 8,
+                                      rowGap: state.compactHome ? 8 : 10) {
                 ForEach(tileLayout.visible) { tile in
                     homeTile(tile)
                         // Keep the hit target active during the same mouse
@@ -213,7 +218,8 @@ struct Dashboard: View {
                         // a brief compression joins the spring landing.
                         .overlay {
                             if tileLayout.highlighted == tile || tileLayout.settling == tile {
-                                RoundedRectangle(cornerRadius: 25, style: .continuous)
+                                RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(25, compact: state.compactHome),
+                                                 style: .continuous)
                                     .strokeBorder(Color.accentColor.opacity(0.75), lineWidth: 1.8)
                                     .padding(2)
                                     .allowsHitTesting(false)
@@ -536,7 +542,8 @@ struct Dashboard: View {
             .frame(height: state.compactHome ? 39 : 41)
             .glassTile(radius: 21, tint: selected ? accent.opacity(0.13) : nil,
                        interactive: true)
-            .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(21, compact: state.compactHome),
+                                           style: .continuous))
         }
         .buttonStyle(ChipBarPressStyle())
         .accessibilityLabel(ChipBarLocale.choose("\(ChipBarLocale.localized(title)), \(selected ? "collapse" : "expand") in side panel", "\(title)，\(kind == .power ? wattage(trailingValue) : "")，\(selected ? "收起" : "在侧边卡片展开")"))

@@ -65,7 +65,8 @@ struct PowerOverviewHomeTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassTile(radius: 26, tint: selected ? outputTint.opacity(0.12) : nil,
                        interactive: true)
-            .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(26, compact: compact),
+                                           style: .continuous))
         }
         .buttonStyle(ChipBarPressStyle())
         .accessibilityLabel(

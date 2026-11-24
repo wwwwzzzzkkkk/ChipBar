@@ -180,7 +180,7 @@ struct StorageCapacitySection: View {
     @Environment(\.compactDashboard) private var compact
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
+        VStack(alignment: .leading, spacing: compact ? 7 : 8) {
             HStack {
                 Label("储存空间", systemImage: "internaldrive")
                     .font(.subheadline.weight(.medium))
@@ -190,7 +190,7 @@ struct StorageCapacitySection: View {
                     .foregroundStyle(.secondary)
             }
 
-            LazyVGrid(columns: columns, spacing: compact ? 5 : 8) {
+            LazyVGrid(columns: columns, spacing: compact ? 7 : 8) {
                 internalCard
                 if showsExternalDrive {
                     externalCards
