@@ -36,7 +36,7 @@ struct PowerSupplyDetailTests {
         #expect(PowerSourceMode(reading: reading(hasBattery: true, adapter: true,
                                                  charging: false, watts: -5)) == .adapterAssisted)
         // The information tile was removed in v3.2.2; the side panel is compact.
-        #expect(SidePanelLayout.height(for: .power) == 640)
+        #expect(DashboardSidePanelKind.power.fitsContentHeight)
         #expect(SidePanelLayout.width(for: .power) == 420)
         #expect(SidePanelLayout.contentWidth(for: .power) - 24 == 372)
         #expect(SidePanelLayout.width(for: .applications) == 314)
@@ -202,8 +202,8 @@ struct PowerSupplyDetailTests {
         #expect(abs(chart.chargeTop - chart.systemTop - chart.systemHeight -
                     LaptopSankeyGeometry.gap) < 0.001)
         #expect(chart.leftTop >= 0)
-        #expect(chart.chargeTop + chart.chargeHeight <= LaptopSankeyGeometry.height)
-        #expect(chart.otherTop + chart.otherHeight <= LaptopSankeyGeometry.height)
+        #expect(chart.chargeTop + chart.chargeHeight <= LaptopSankeyGeometry.maximumHeight)
+        #expect(chart.otherTop + chart.otherHeight <= LaptopSankeyGeometry.maximumHeight)
     }
 
     @Test func desktopBreakdownUsesInternalPowerAndKeepsItWhenChipDataIsMissing() throws {
@@ -282,6 +282,21 @@ struct PowerSupplyDetailTests {
         #expect(chart.leftTop == chart.assistTop + chart.assistHeight + LaptopSankeyGeometry.gap)
         #expect(chart.chipTop == chart.systemTop - LaptopSankeyGeometry.gap / 2)
         #expect(chart.otherTop == chart.systemTop + chart.chipHeight + LaptopSankeyGeometry.gap / 2)
+    }
+
+    @Test func powerDiagramFitsVisibleBranchesWithoutRescalingThem() {
+        let battery = LaptopSankeyGeometry.make(systemWatts: 22.7, chargeWatts: 0,
+                                                 assistWatts: 0, chipWatts: 5.1)
+        let charging = LaptopSankeyGeometry.make(systemWatts: 27.4, chargeWatts: 38.1,
+                                                  assistWatts: 0, chipWatts: 8.3)
+        let batteryHeight = battery.contentHeight(showsSupply: true, showsBreakdown: true)
+        let chargingHeight = charging.contentHeight(showsSupply: true, showsBreakdown: true)
+        #expect(batteryHeight < chargingHeight)
+        #expect(batteryHeight == battery.otherTop + battery.otherHeight + 12)
+        #expect(chargingHeight == charging.chargeTop + charging.chargeHeight + 12)
+        #expect(chargingHeight <= LaptopSankeyGeometry.maximumHeight)
+        #expect(battery.contentHeight(showsSupply: false, showsBreakdown: false)
+                == battery.systemTop + battery.systemHeight + 12)
     }
 
     @Test func powerBranchesSpreadEvenlyAroundSystemNode() {

@@ -127,9 +127,10 @@ private enum LaptopFlowStyle {
 /// A shared scale sets each junction's total width. A minimum visual width
 /// keeps small nonzero branches legible without changing their watt labels.
 struct LaptopSankeyGeometry {
-    static let height: CGFloat = 224
-    static let labelInset: CGFloat = 23
+    private static let verticalInset: CGFloat = 12
+    private static let maximumRibbonHeight: CGFloat = 166
     static let gap: CGFloat = 12
+    static let maximumHeight = maximumRibbonHeight + gap + 2 * verticalInset
     static let minimumRibbonHeight: CGFloat = 22
 
     let scale: CGFloat
@@ -146,6 +147,17 @@ struct LaptopSankeyGeometry {
     let otherTop: CGFloat
     let otherHeight: CGFloat
 
+    func contentHeight(showsSupply: Bool, showsBreakdown: Bool) -> CGFloat {
+        var bottom = systemTop + systemHeight
+        if showsSupply {
+            bottom = max(bottom, leftTop + inputHeight, assistTop + assistHeight, chargeTop + chargeHeight)
+        }
+        if showsBreakdown {
+            bottom = max(bottom, chipTop + chipHeight, otherTop + otherHeight)
+        }
+        return bottom + Self.verticalInset
+    }
+
     static func make(_ flow: PowerFlowTopology) -> LaptopSankeyGeometry {
         make(systemWatts: flow.systemWatts, chargeWatts: flow.chargeWatts,
              assistWatts: flow.assistWatts, chipWatts: flow.chipWatts)
@@ -156,8 +168,7 @@ struct LaptopSankeyGeometry {
         let leadingWatts = max(0, systemWatts + chargeWatts - assistWatts)
         let otherWatts = max(0, systemWatts - chipWatts)
         let grossWatts = systemWatts + chargeWatts
-        let capacity = height - labelInset * 2 - gap
-        let s = min(LaptopFlowStyle.pointsPerWatt, capacity / CGFloat(max(grossWatts, 1)))
+        let s = min(LaptopFlowStyle.pointsPerWatt, maximumRibbonHeight / CGFloat(max(grossWatts, 1)))
         let chipMinimum = chipWatts > 0 ? minimumRibbonHeight : 0
         let otherMinimum = otherWatts > 0 ? minimumRibbonHeight : 0
         let systemMinimum = chipMinimum + otherMinimum
@@ -179,7 +190,7 @@ struct LaptopSankeyGeometry {
             ? min(max(CGFloat(chipWatts) * s, chipMinimum), systemH - otherMinimum) : systemH
         let otherH = systemH - chipH
         // Place the merged flow between the two input lanes.
-        let top = labelInset
+        let top = verticalInset
         let inputGap = inputH > 0 && assistH > 0 ? gap : 0
         let systemTop = top + inputGap / 2
         // Open the outlet gap equally above and below the system split.
@@ -413,14 +424,15 @@ struct PowerSankeyDiagram: View, Animatable {
     }
 
     private var flowGraph: some View {
-        GeometryReader { proxy in
-            let system = animatableData.first.first
-            let charge = animatableData.first.second
-            let assist = animatableData.second.first
-            let chip = animatableData.second.second
-            let geometry = LaptopSankeyGeometry.make(
-                systemWatts: system, chargeWatts: charge, assistWatts: assist, chipWatts: chip)
-            let hasInputs = flow.showsSupply
+        let system = animatableData.first.first
+        let charge = animatableData.first.second
+        let assist = animatableData.second.first
+        let chip = animatableData.second.second
+        let geometry = LaptopSankeyGeometry.make(
+            systemWatts: system, chargeWatts: charge, assistWatts: assist, chipWatts: chip)
+        let hasInputs = flow.showsSupply
+
+        return GeometryReader { proxy in
             let columns = Columns(width: proxy.size.width, hasInputs: hasInputs)
             let inputX = (columns.inlet + columns.merge) / 2
             let outputX = (columns.split + columns.outlet) / 2
@@ -522,7 +534,7 @@ struct PowerSankeyDiagram: View, Animatable {
                 }
             }
         }
-        .frame(height: LaptopSankeyGeometry.height)
+        .frame(height: geometry.contentHeight(showsSupply: hasInputs, showsBreakdown: flow.hasBreakdown))
     }
 
     private func supplyPaths(_ g: LaptopSankeyGeometry, columns: Columns,

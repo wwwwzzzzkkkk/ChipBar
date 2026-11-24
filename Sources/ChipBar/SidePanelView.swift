@@ -5,6 +5,8 @@ enum DashboardSidePanelKind: String, Equatable {
     case power
     case externalDisk
     case cluster
+
+    var fitsContentHeight: Bool { self == .power || self == .cluster }
 }
 
 /// Shared native-window sizing for each independent tile page.
@@ -16,9 +18,8 @@ enum SidePanelLayout {
     static let padding: CGFloat = 12
     static let contentWidth: CGFloat = width - 2 * padding
     static let applicationHeight: CGFloat = 250
-    // Power page is scrollable inside a stable native window; expanding a port
-    // must never resize the parent menu or its glass sidecar.
-    static let powerHeight: CGFloat = 640
+    // Opening estimate used only until the native window measures its content.
+    static let powerHeight: CGFloat = 360
     static let diskHeight: CGFloat = 410
     static let clusterHeight: CGFloat = 310
     static let clusterDisclosureAnimationDuration = 0.24
@@ -197,7 +198,7 @@ struct SidePanelLoadingView: View {
 
 /// Measures the SwiftUI content's intrinsic height independently of the
 /// AppKit scroll viewport. Only the Cluster sidecar consumes this preference.
-private struct ClusterSidecarContentHeightKey: PreferenceKey {
+private struct SidePanelContentHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -272,7 +273,7 @@ struct DashboardSidePanelView: View {
     /// Explicit kind avoids @Published's didSet timing: the sidecar always
     /// mounts the selected page before its native window becomes visible.
     var kindOverride: DashboardSidePanelKind? = nil
-    var onClusterContentHeightChange: ((CGFloat) -> Void)? = nil
+    var onContentHeightChange: ((CGFloat) -> Void)? = nil
 
     private var displayedKind: DashboardSidePanelKind? {
         kindOverride ?? state.sidePanel
@@ -314,24 +315,24 @@ struct DashboardSidePanelView: View {
         .frame(width: SidePanelLayout.contentWidth(for: displayedKind), alignment: .topLeading)
         .padding(SidePanelLayout.padding)
         // Fit the full vertical content even if the NSScrollView currently
-        // proposes a shorter viewport. Only cluster uses this intrinsic fit.
-        .fixedSize(horizontal: false, vertical: displayedKind == .cluster)
+        // proposes a shorter viewport.
+        .fixedSize(horizontal: false, vertical: displayedKind?.fitsContentHeight == true)
         // A flexible maxHeight here made the preferred height equal to the
         // old scroll viewport, not the actual tiles, and fed stale dimensions
         // back into the AppKit window.
         .background {
-            if displayedKind == .cluster {
+            if displayedKind?.fitsContentHeight == true {
                 GeometryReader { geometry in
                     Color.clear.preference(
-                        key: ClusterSidecarContentHeightKey.self,
+                        key: SidePanelContentHeightKey.self,
                         value: geometry.size.height
                     )
                 }
             }
         }
-        .onPreferenceChange(ClusterSidecarContentHeightKey.self) { height in
-            if displayedKind == .cluster, height.isFinite, height > 0 {
-                onClusterContentHeightChange?(height)
+        .onPreferenceChange(SidePanelContentHeightKey.self) { height in
+            if displayedKind?.fitsContentHeight == true, height.isFinite, height > 0 {
+                onContentHeightChange?(height)
             }
         }
         .buttonStyle(ChipBarPressStyle())

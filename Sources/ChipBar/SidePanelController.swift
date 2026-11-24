@@ -29,13 +29,13 @@ import QuartzCore
     private var lastParentHorizontalFrame: CGRect?
     private var lastVisibleFrame: CGRect?
     private let pageMotionKey = "chipbar.sidecar.page-motion"
-    private var clusterFitTask: Task<Void, Never>?
-    private var measuredClusterContentHeight: CGFloat = 0
+    private var contentFitTask: Task<Void, Never>?
+    private var measuredContentHeight: CGFloat = 0
     private var resetClusterScrollOnFit = false
     // User interactions pin the native window; only its document grows.
     private var clusterViewportPinned = false
     private var clusterDisclosureAnimationDeadline: TimeInterval = 0
-    private var clusterAnchoredTop: CGFloat?
+    private var contentAnchoredTop: CGFloat?
     private var clusterLayoutSubscription: AnyCancellable?
     private var clusterTaskSubscription: AnyCancellable?
     private var externalTaskSubscription: AnyCancellable?
@@ -196,8 +196,8 @@ import QuartzCore
                 let oldSide: SidePanelPlacement.Side = openedOnRight ? .right : .left
                 transition = UUID()
                 let token = transition
-                clusterFitTask?.cancel()
-                clusterFitTask = nil
+                contentFitTask?.cancel()
+                contentFitTask = nil
                 navigationDeadline = ProcessInfo.processInfo.systemUptime
                     + SidePanelNavigationMotion.relocationDuration
                 animateContent(
@@ -236,11 +236,11 @@ import QuartzCore
         if !preservingMotion { navigationDeadline = 0 }
         clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
-        clusterFitTask?.cancel()
-        clusterFitTask = nil
-        measuredClusterContentHeight = 0
+        contentFitTask?.cancel()
+        contentFitTask = nil
+        measuredContentHeight = 0
         resetClusterScrollOnFit = kind == .cluster
-        clusterAnchoredTop = nil
+        contentAnchoredTop = nil
         openedKind = kind
         scrollView.verticalScrollElasticity = kind == .cluster ? .none : .automatic
         scrollView.hasVerticalScroller = false
@@ -274,19 +274,19 @@ import QuartzCore
         host.rootView = AnyView(DashboardSidePanelView(
             monitor: monitor, state: state, close: onClose,
             kindOverride: kind,
-            onClusterContentHeightChange: { [weak self] height in
-                guard let self, self.transition == token, kind == .cluster else { return }
-                self.scheduleClusterFit(measuredHeight: height)
+            onContentHeightChange: { [weak self] height in
+                guard let self, self.transition == token, kind.fitsContentHeight else { return }
+                self.scheduleContentFit(measuredHeight: height)
             }
         ))
         let desiredHeight: CGFloat
-        if isCluster {
-            // Only Cluster needs a synchronous intrinsic measurement.
+        if kind.fitsContentHeight {
+            // Fit the document before the first visible frame.
             host.layoutSubtreeIfNeeded()
             let fitted = ceil(host.fittingSize.height)
             desiredHeight = fitted.isFinite && fitted > 0
-                ? min(10_000, fitted) : SidePanelLayout.clusterHeight
-            measuredClusterContentHeight = desiredHeight
+                ? min(10_000, fitted) : SidePanelLayout.height(for: kind)
+            measuredContentHeight = desiredHeight
         } else {
             desiredHeight = SidePanelLayout.height(for: kind)
         }
@@ -307,7 +307,7 @@ import QuartzCore
 
         let openRight = placement.side == .right
         openedOnRight = openRight
-        if isCluster { clusterAnchoredTop = target.maxY }
+        if kind.fitsContentHeight { contentAnchoredTop = target.maxY }
 
         // Commit the final legal geometry once, without synchronous
         // display. Core Animation owns the slide, not a 16ms MainActor loop.
@@ -333,6 +333,7 @@ import QuartzCore
                 duration: SidePanelNavigationMotion.enterDuration, entering: true)
         }
         panel.makeKeyAndOrderFront(nil)
+        if kind == .power { scheduleContentFit() }
     }
 
     /// Retarget an interrupted edge transition from the displayed values.
@@ -370,65 +371,70 @@ import QuartzCore
         layer.add(group, forKey: pageMotionKey)
     }
 
-    /// The live SwiftUI view reports its natural content height via a
-    /// PreferenceKey. Never temporarily compress the NSHostingView to 1pt:
-    /// that changes the scroll document origin and clips its first rows.
-    /// Shrink-wrap on large displays; only scroll on small displays.
-    private func scheduleClusterFit(measuredHeight: CGFloat? = nil,
-                                    resetScroll: Bool = false) {
+    private func scheduleClusterFit() {
+        guard openedKind == .cluster else { return }
+        scheduleContentFit()
+    }
+
+    /// The hosted document reports its natural height independently of the viewport.
+    private func scheduleContentFit(measuredHeight: CGFloat? = nil) {
         if let measuredHeight, measuredHeight.isFinite, measuredHeight > 0 {
-            measuredClusterContentHeight = min(10_000, measuredHeight)
+            measuredContentHeight = min(10_000, measuredHeight)
         }
-        if resetScroll { resetClusterScrollOnFit = true }
-        guard openedKind == .cluster, panel.isVisible else { return }
-        // Only the task rows animate. Wait until their transition ends,
-        // then fit the native NSPanel once. Repeated frame updates were
-        // moving the entire glass container during every disclosure.
-        clusterFitTask?.cancel()
+        guard let kind = openedKind, kind.fitsContentHeight, panel.isVisible else { return }
+        // Coalesce animated content changes into one native frame update.
+        // Keep navigation and Cluster task disclosures on their existing timelines.
+        contentFitTask?.cancel()
         let token = transition
         let remaining = max(clusterDisclosureAnimationDeadline, navigationDeadline)
             - ProcessInfo.processInfo.systemUptime
         let delayMilliseconds = remaining > 0
             ? max(16, Int((remaining * 1000).rounded(.up)) + 16) : 75
-        clusterFitTask = Task { @MainActor [weak self] in
+        contentFitTask = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .milliseconds(delayMilliseconds)) }
             catch { return }
             guard let self, self.transition == token,
-                  self.openedKind == .cluster, self.panel.isVisible,
+                  self.openedKind == kind, self.panel.isVisible,
                   let visible = (self.parentWindow?.screen ?? self.panel.screen)?.visibleFrame else {
                 return
             }
             // The geometry driver owns the panel until the page transition
             // ends. A layout preference must never race its final frame.
             if self.relocationTask != nil {
-                self.scheduleClusterFit()
+                self.scheduleContentFit()
                 return
             }
-            let width = SidePanelLayout.width(for: .cluster)
-            let measured = self.measuredClusterContentHeight
+            let width = SidePanelLayout.width(for: kind)
+            let measured = self.measuredContentHeight
             let natural = measured > 0 ? measured : self.host.fittingSize.height
             let content = natural.isFinite && natural > 0
-                ? min(10_000, ceil(natural)) : SidePanelLayout.clusterHeight
+                ? min(10_000, ceil(natural)) : SidePanelLayout.height(for: kind)
             let old = self.panel.frame
-            let proposed = ClusterSidecarSizing.windowHeight(
-                content: content, available: visible.height)
-            let resizeWindow = ClusterSidecarSizing.shouldResizeWindow(
-                from: old.height, to: proposed, available: visible.height,
-                userDisclosurePinned: self.clusterViewportPinned)
+            let isCluster = kind == .cluster
+            let proposed = isCluster
+                ? ClusterSidecarSizing.windowHeight(content: content, available: visible.height)
+                : min(content, max(1, visible.height - SidePanelPlacement.edgeInset * 2))
+            let resizeWindow = isCluster
+                ? ClusterSidecarSizing.shouldResizeWindow(
+                    from: old.height, to: proposed, available: visible.height,
+                    userDisclosurePinned: self.clusterViewportPinned)
+                : abs(old.height - proposed) > 1
             let height = resizeWindow ? proposed : old.height
             let clip = self.scrollView.contentView
             let previousScrollY = clip.bounds.origin.y
             let previousScrollX = clip.bounds.origin.x
 
-            // The scroll document expands to hold all real task rows. A user
-            // disclosure never resizes/repositions NSPanel: its scroll viewport
-            // stays fixed, so nothing under the pointer moves unexpectedly.
-            self.host.setFrameSize(NSSize(width: width,
-                                         height: max(content, height)))
-            self.scrollView.hasVerticalScroller = content > height + 2
+            // Keep the full document available when its viewport is capped
+            // by the screen or pinned by a Cluster task disclosure.
+            let size = NSSize(width: width, height: max(content, height))
+            if self.host.frame.size != size { self.host.setFrameSize(size) }
+            let needsScroll = content > height + 2
+            if self.scrollView.hasVerticalScroller != needsScroll {
+                self.scrollView.hasVerticalScroller = needsScroll
+            }
             if resizeWindow {
                 let top = ClusterSidecarSizing.stableTop(
-                    openedAt: self.clusterAnchoredTop ?? old.maxY,
+                    openedAt: self.contentAnchoredTop ?? old.maxY,
                     visibleMaxY: visible.maxY)
                 let y = ClusterSidecarSizing.bottomY(
                     anchoredTop: top, height: height, visibleMinY: visible.minY)
@@ -454,7 +460,7 @@ import QuartzCore
                     self.scrollView.reflectScrolledClipView(clip)
                 }
             }
-            self.clusterFitTask = nil
+            self.contentFitTask = nil
         }
     }
 
@@ -483,14 +489,14 @@ import QuartzCore
         relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
-        clusterFitTask?.cancel()
-        clusterFitTask = nil
-        measuredClusterContentHeight = 0
+        contentFitTask?.cancel()
+        contentFitTask = nil
+        measuredContentHeight = 0
         resetClusterScrollOnFit = false
         clusterViewportPinned = false
         clusterDisclosureAnimationDeadline = 0
         navigationDeadline = 0
-        clusterAnchoredTop = nil
+        contentAnchoredTop = nil
         let interrupted = contentPresentation()
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
         // Keep the glass itself opaque. Only the content retreats; an

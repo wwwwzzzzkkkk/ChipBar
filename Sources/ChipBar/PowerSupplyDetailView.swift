@@ -407,57 +407,48 @@ struct PowerSupplyDetailView: View {
             }
             .frame(height: 40)
 
-            // A fixed native side-panel frame avoids the jump seen when an
-            // expandable port row changes its intrinsic height. Only the
-            // interior scrolls, leaving the existing Sankey geometry intact.
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        let flow = topology
-                        let powerFlow = flow.map {
-                            PowerSankeyDiagram(flow: $0, active: active && reading.live)
-                        }
-                        HStack(alignment: .firstTextBaseline) {
-                            Text("功率流向").font(.caption.weight(.semibold))
-                            Spacer(minLength: 8)
-                            if reading.hasBattery, let powerFlow {
-                                powerFlow.statusLabel
-                            } else if powerFlow == nil {
-                                Text("左 → 右 · 条带粗细 = 瓦数")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.75)
-                            }
-                        }
-                        if let flow, let powerFlow {
-                            powerFlow
-                                .id(flow.mode)
-                                .animation(
-                                    active && reading.live && !reduceMotion
-                                        ? .spring(response: 0.36, dampingFraction: 1) : nil,
-                                    value: flow)
-                        } else if reading.hasBattery {
-                            LaptopPowerFallbackView(
-                                reading: reading,
-                                chipWatts: sampler.chipWattsAtReading,
-                                active: active && reading.live)
-                        } else {
-                            Text(ChipBarLocale.choose("Waiting for internal power", "等待内部功率读数"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, minHeight: 100)
-                        }
-                    }
-                    .padding(12)
-                    .glassTile(radius: 26)
-
-                    USBCPowerSection(snapshot: reading.usb)
-                    USBDeviceLinkSection(devices: reading.usb.devices)
+            VStack(alignment: .leading, spacing: 10) {
+                let flow = topology
+                let powerFlow = flow.map {
+                    PowerSankeyDiagram(flow: $0, active: active && reading.live)
                 }
-                .padding(.vertical, 2)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("功率流向").font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    if reading.hasBattery, let powerFlow {
+                        powerFlow.statusLabel
+                    } else if powerFlow == nil {
+                        Text("左 → 右 · 条带粗细 = 瓦数")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                }
+                if let flow, let powerFlow {
+                    powerFlow
+                        .id(flow.mode)
+                        .animation(
+                            active && reading.live && !reduceMotion
+                                ? .spring(response: 0.36, dampingFraction: 1) : nil,
+                            value: flow)
+                } else if reading.hasBattery {
+                    LaptopPowerFallbackView(
+                        reading: reading,
+                        chipWatts: sampler.chipWattsAtReading,
+                        active: active && reading.live)
+                } else {
+                    Text(ChipBarLocale.choose("Waiting for internal power", "等待内部功率读数"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 100)
+                }
             }
-            .frame(height: SidePanelLayout.powerHeight - SidePanelLayout.padding * 2 - 50)
+            .padding(12)
+            .glassTile(radius: 26)
+
+            USBCPowerSection(snapshot: reading.usb)
+            USBDeviceLinkSection(devices: reading.usb.devices)
         }
     }
 }
