@@ -42,6 +42,7 @@ struct ClusterPairingCandidate: Equatable {
     static let shared = ClusterMonitorService()
 
     @Published private(set) var enabled: Bool = false
+    @Published private(set) var needsKeychainAccess = false
     @Published private(set) var peers: [ClusterNodeReadout] = []
     @Published private(set) var observedOpenFASTTasks: [ClusterTaskReadout] = []
     @Published private(set) var externalTasks: [ClusterTaskReadout] = []
@@ -58,8 +59,8 @@ struct ClusterPairingCandidate: Equatable {
 
     private weak var monitor: Monitor?
     private let nodeID: String
-    private let identity: Curve25519.KeyAgreement.PrivateKey
-    private var trusted: [String: Data]
+    private var identity: Curve25519.KeyAgreement.PrivateKey?
+    private var trusted: [String: Data] = [:]
     private var panelVisible = false
     private var discoveryGraceTask: Task<Void, Never>?
     private var listener: NWListener?
@@ -79,15 +80,12 @@ struct ClusterPairingCandidate: Equatable {
         let id = defaults.string(forKey: Self.nodeIDKey) ?? UUID().uuidString
         defaults.set(id, forKey: Self.nodeIDKey)
         nodeID = id
-        identity = Self.identityKey()
-        trusted = (Self.readKeychain(account: Self.trustedAccount))
-            .flatMap { try? JSONDecoder().decode([String: Data].self, from: $0) } ?? [:]
-        enabled = defaults.bool(forKey: Self.enabledKey) && !trusted.isEmpty
     }
 
     func attach(monitor: Monitor) {
         self.monitor = monitor
-        if enabled { start() }
+        if UserDefaults.standard.bool(forKey: Self.enabledKey),
+           loadCredentials(createIdentity: false), enabled { start() }
     }
 
     /// Discovery runs only while the detail panel is open, or if this Mac is
@@ -97,7 +95,7 @@ struct ClusterPairingCandidate: Equatable {
         discoveryGraceTask?.cancel()
         discoveryGraceTask = nil
         if value {
-            start()
+            if loadCredentials() { start() }
             scanOpenFASTIfNeeded(force: true)
         } else if !enabled {
             // Switching to the other Mac can dismiss the menu panel.
@@ -141,11 +139,16 @@ struct ClusterPairingCandidate: Equatable {
 
     func refreshDiscovery() {
         stop()
-        if enabled || panelVisible { start() }
+        if (enabled || panelVisible), loadCredentials() { start() }
+    }
+
+    func restoreKeychainAccess() {
+        if loadCredentials(allowInteraction: true) { start() }
     }
 
     func requestPairing(with id: String) {
-        guard let session = sessions.values.first(where: { $0.hello?.id == id }),
+        guard let identity,
+              let session = sessions.values.first(where: { $0.hello?.id == id }),
               let hello = session.hello,
               let key = session.key,
               trusted[id] != hello.publicKey else {
@@ -177,7 +180,7 @@ struct ClusterPairingCandidate: Equatable {
         let previous = trusted
         trusted[candidate.id] = candidate.publicKey
         guard let encoded = try? JSONEncoder().encode(trusted),
-              Self.storeKeychain(encoded, account: Self.trustedAccount) else {
+              Self.storeKeychain(encoded, account: Self.trustedAccount, allowInteraction: true) else {
             trusted = previous
             status = ChipBarLocale.choose("Could not save pairing. Check macOS Keychain.", "无法保存配对，请检查 macOS 钥匙串")
             return
@@ -192,10 +195,14 @@ struct ClusterPairingCandidate: Equatable {
     }
 
     func forgetPeer(_ id: String) {
-        guard trusted.removeValue(forKey: id) != nil else { return }
-        if let data = try? JSONEncoder().encode(trusted) {
-            _ = Self.storeKeychain(data, account: Self.trustedAccount)
+        var remaining = trusted
+        guard remaining.removeValue(forKey: id) != nil else { return }
+        guard let data = try? JSONEncoder().encode(remaining),
+              Self.storeKeychain(data, account: Self.trustedAccount, allowInteraction: true) else {
+            status = ChipBarLocale.choose("Could not remove pairing. Check macOS Keychain.", "无法移除配对，请检查 macOS 钥匙串")
+            return
         }
+        trusted = remaining
         peers.removeAll { $0.id == id }
         lastSeen.removeValue(forKey: id)
         if trusted.isEmpty { setEnabled(false) }
@@ -239,7 +246,7 @@ struct ClusterPairingCandidate: Equatable {
     private var bonjourName: String { "ChipBar-" + String(nodeID.prefix(8)) }
 
     private func start() {
-        guard listener == nil else { return }
+        guard identity != nil, listener == nil else { return }
         do {
             let service = try NWListener(using: .tcp)
             service.service = NWListener.Service(
@@ -376,6 +383,7 @@ struct ClusterPairingCandidate: Equatable {
     }
 
     private func sendHello(to session: ClusterPeerSession) {
+        guard let identity else { return }
         let hello = ClusterPeerHello(
             id: nodeID,
             name: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
@@ -435,7 +443,8 @@ struct ClusterPairingCandidate: Equatable {
     }
 
     private func processHello(_ body: Data, from session: ClusterPeerSession) {
-        guard body.count <= 2048,
+        guard let identity,
+              body.count <= 2048,
               let hello = try? JSONDecoder().decode(ClusterPeerHello.self, from: body),
               hello.isValid, hello.id != nodeID,
               let key = try? ClusterPairing.sessionKey(
@@ -593,42 +602,88 @@ struct ClusterPairingCandidate: Equatable {
         return Array(decoded.tasks.prefix(12))
     }
 
-    private static func identityKey() -> Curve25519.KeyAgreement.PrivateKey {
-        if let stored = readKeychain(account: identityAccount),
-           let privateKey = try? Curve25519.KeyAgreement.PrivateKey(
-               rawRepresentation: stored) { return privateKey }
-        let generated = Curve25519.KeyAgreement.PrivateKey()
-        _ = storeKeychain(generated.rawRepresentation, account: identityAccount)
-        return generated
+    private enum CredentialsError: Error {
+        case unavailable
     }
 
-    private static func readKeychain(account: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
-        else { return nil }
-        return item as? Data
+    private func loadCredentials(allowInteraction: Bool = false, createIdentity: Bool = true) -> Bool {
+        guard identity == nil else { return true }
+        do {
+            let read = {
+                try (Self.readKeychain(account: Self.identityAccount),
+                     Self.readKeychain(account: Self.trustedAccount))
+            }
+            let (storedIdentity, storedPeers) = try allowInteraction ? read() : Self.withoutKeychainPrompts(read)
+            let savedPeers = try storedPeers.map { try JSONDecoder().decode([String: Data].self, from: $0) } ?? [:]
+            let key: Curve25519.KeyAgreement.PrivateKey
+            if let storedIdentity {
+                key = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: storedIdentity)
+            } else {
+                // A denied read is never treated as a missing item. Do not
+                // replace an identity when existing peers still expect it.
+                guard createIdentity, savedPeers.isEmpty else { throw CredentialsError.unavailable }
+                key = Curve25519.KeyAgreement.PrivateKey()
+                guard Self.storeKeychain(key.rawRepresentation, account: Self.identityAccount) else {
+                    throw CredentialsError.unavailable
+                }
+            }
+            identity = key
+            trusted = savedPeers
+            enabled = UserDefaults.standard.bool(forKey: Self.enabledKey) && !trusted.isEmpty
+            needsKeychainAccess = false
+            return true
+        } catch {
+            needsKeychainAccess = true
+            status = ChipBarLocale.choose(
+                "Authorize access to restore Cluster pairing.",
+                "请授权访问钥匙串以恢复集群配对。")
+            return false
+        }
     }
 
-    private static func storeKeychain(_ data: Data, account: String) -> Bool {
-        let identity: [String: Any] = [
+    private static func keychainQuery(account: String) -> [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: account
         ]
-        var record = identity
-        record[kSecValueData as String] = data
-        record[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let update = SecItemUpdate(identity as CFDictionary,
-                                   [kSecValueData as String: data] as CFDictionary)
-        if update == errSecSuccess { return true }
-        if update != errSecItemNotFound { return false }
-        return SecItemAdd(record as CFDictionary, nil) == errSecSuccess
+    }
+
+    private static func readKeychain(account: String) throws -> Data? {
+        var query = keychainQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else { throw CredentialsError.unavailable }
+        return data
+    }
+
+    // Existing builds use macOS's file-based keychain. LAContext only
+    // controls prompts for data-protection keychain operations here.
+    // All Cluster keychain operations are synchronous on the main actor.
+    private static func withoutKeychainPrompts<T>(_ operation: () throws -> T) throws -> T {
+        var previous = DarwinBoolean(true)
+        guard SecKeychainGetUserInteractionAllowed(&previous) == errSecSuccess,
+              SecKeychainSetUserInteractionAllowed(false) == errSecSuccess else {
+            throw CredentialsError.unavailable
+        }
+        defer { SecKeychainSetUserInteractionAllowed(previous.boolValue) }
+        return try operation()
+    }
+
+    private static func storeKeychain(_ data: Data, account: String, allowInteraction: Bool = false) -> Bool {
+        let write = {
+            let query = Self.keychainQuery(account: account)
+            let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            if update == errSecSuccess { return true }
+            if update != errSecItemNotFound { return false }
+            var record = query
+            record[kSecValueData as String] = data
+            record[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            return SecItemAdd(record as CFDictionary, nil) == errSecSuccess
+        }
+        return allowInteraction ? write() : (try? withoutKeychainPrompts(write)) ?? false
     }
 }

@@ -362,33 +362,16 @@ struct PowerSupplyDetailView: View {
     let active: Bool
     let close: () -> Void
     @ObservedObject private var sampler = ChipBarPowerFlowModel.shared
-    @State(initialValue: false) private var showsLaptopBreakdown: Bool
+    @State(initialValue: false) private var showsPowerBreakdown: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var reading: ChipBarPowerReading { sampler.reading }
-    private var breakdown: PowerDistribution {
-        PowerDistribution(internalWatts: reading.systemWatts,
-                          chipWatts: sampler.chipWattsAtReading)
-    }
-    private var mode: PowerSourceMode { PowerSourceMode(reading: reading) }
-    private var laptopTopology: LaptopPowerTopology? {
-        LaptopPowerTopology(reading: reading, chipWatts: sampler.chipWattsAtReading)
+    private var topology: PowerFlowTopology? {
+        PowerFlowTopology(reading: reading, chipWatts: sampler.chipWattsAtReading)
     }
     private var partialReading: Bool {
-        reading.hasBattery && (reading.diagnostics.batterySource == "AppleSmartBattery (cached)" ||
-            laptopTopology == nil)
-    }
-    private var supplyTitle: String {
-        mode == .battery ? "电池供电" : "外部供电"
-    }
-    private var supplyWatts: Double? {
-        if mode == .battery {
-            guard let watts = reading.batteryWatts, watts.isFinite, watts < 0
-            else { return nil }
-            return abs(watts)
-        }
-        guard reading.hasBattery, reading.onAdapter else { return nil }
-        return reading.adapterWatts
+        reading.diagnostics.batterySource == "AppleSmartBattery (cached)"
+            || topology?.hasBreakdown != true
     }
 
     var body: some View {
@@ -431,17 +414,17 @@ struct PowerSupplyDetailView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
-                        let flow = laptopTopology
-                        let laptopFlow = flow.map {
-                            LaptopPowerSankeyFlow(flow: $0, active: active && reading.live,
-                                                  detailsExpanded: $showsLaptopBreakdown)
+                        let flow = topology
+                        let powerFlow = flow.map {
+                            ExpandablePowerSankeyFlow(flow: $0, active: active && reading.live,
+                                                  detailsExpanded: $showsPowerBreakdown)
                         }
                         HStack(alignment: .firstTextBaseline) {
                             Text("功率流向").font(.caption.weight(.semibold))
                             Spacer(minLength: 8)
-                            if let laptopFlow {
-                                laptopFlow.statusLabel
-                            } else {
+                            if reading.hasBattery, let powerFlow {
+                                powerFlow.statusLabel
+                            } else if powerFlow == nil {
                                 Text("左 → 右 · 条带粗细 = 瓦数")
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
@@ -449,30 +432,24 @@ struct PowerSupplyDetailView: View {
                                     .minimumScaleFactor(0.75)
                             }
                         }
-                        if reading.hasBattery {
-                            if let flow, let laptopFlow {
-                                laptopFlow
-                                    .id(flow.mode)
-                                    .animation(
-                                        active && reading.live && !reduceMotion
-                                            ? .spring(response: 0.36, dampingFraction: 1) : nil,
-                                        value: flow)
-                            } else {
-                                LaptopPowerFallbackView(
-                                    reading: reading,
-                                    chipWatts: sampler.chipWattsAtReading,
-                                    active: active && reading.live)
-                            }
+                        if let flow, let powerFlow {
+                            powerFlow
+                                .id(flow.mode)
+                                .animation(
+                                    active && reading.live && !reduceMotion
+                                        ? .spring(response: 0.36, dampingFraction: 1) : nil,
+                                    value: flow)
+                        } else if reading.hasBattery {
+                            LaptopPowerFallbackView(
+                                reading: reading,
+                                chipWatts: sampler.chipWattsAtReading,
+                                active: active && reading.live,
+                                detailsExpanded: $showsPowerBreakdown)
                         } else {
-                            PowerSankeyFlow(distribution: breakdown, externalWatts: supplyWatts,
-                                            sourceTitle: supplyTitle,
-                                            active: active && reading.live)
-                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
-                                           value: breakdown.internalWatts)
-                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
-                                           value: breakdown.chipWatts)
-                                .animation(reduceMotion ? nil : .easeInOut(duration: 0.70),
-                                           value: supplyWatts)
+                            Text(ChipBarLocale.choose("Waiting for internal power", "等待内部功率读数"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 100)
                         }
                     }
                     .padding(12)

@@ -144,6 +144,14 @@ struct ClusterMonitorPanel: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("雷雳桥接连接帮助")
             }
+            if cluster.needsKeychainAccess {
+                Button {
+                    cluster.restoreKeychainAccess()
+                } label: {
+                    Label(ChipBarLocale.choose("Restore Cluster access", "恢复集群访问"), systemImage: "key")
+                }
+                .controlSize(.small)
+            }
             if showNetworkHelp {
                 Text("雷雳线需要建立网络：两台 Mac 打开「系统设置 → 网络 → Thunderbolt Bridge」，确认已连接并有 IP；同时允许 ChipBar 访问「隐私与安全性 → 本地网络」。")
                     .font(.caption2).foregroundStyle(.secondary)

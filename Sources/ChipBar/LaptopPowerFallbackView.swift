@@ -1,42 +1,11 @@
 import SwiftUI
 
-/// A MacBook does not stop reporting power just because a particular SMC
-/// battery key is absent or momentarily out of step with its chip sample.
-/// Only draw a conservation Sankey when both domains are *individually* valid.
-enum LaptopPowerPresentation: Equatable {
-    case complete
-    case systemAndChip
-    case independent
-    case unavailable
-
-    init(reading: ChipBarPowerReading, chipWatts: Double?) {
-        if LaptopPowerTopology(reading: reading, chipWatts: chipWatts) != nil {
-            self = .complete
-        } else if PowerDistribution(internalWatts: reading.systemWatts,
-                                    chipWatts: chipWatts).otherWatts != nil {
-            self = .systemAndChip
-        } else if reading.adapterWatts != nil || reading.systemWatts != nil
-                    || reading.batteryWatts != nil || chipWatts != nil {
-            self = .independent
-        } else {
-            self = .unavailable
-        }
-    }
-}
-
 struct LaptopPowerFallbackView: View {
     let reading: ChipBarPowerReading
     let chipWatts: Double?
     let active: Bool
-
-    private var mode: LaptopPowerPresentation {
-        LaptopPowerPresentation(reading: reading, chipWatts: chipWatts)
-    }
-
-    private var distribution: PowerDistribution {
-        PowerDistribution(internalWatts: reading.systemWatts,
-                          chipWatts: chipWatts)
-    }
+    @Binding var detailsExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var batteryStatus: String {
         if !reading.onAdapter {
@@ -140,15 +109,10 @@ struct LaptopPowerFallbackView: View {
                        value: chipWatts, detail: "macmon")
             }
 
-            if mode == .systemAndChip {
-                // When PSTR and macmon agree sufficiently to form a valid
-                // system subtotal, only that *validated* section gets ribbons.
-                PowerSankeyFlow(
-                    distribution: distribution,
-                    externalWatts: nil,
-                    sourceTitle: "",
-                    active: active,
-                    internalTitle: "系统功率")
+            if let flow = PowerFlowTopology(validatedSystemOf: reading, chipWatts: chipWatts) {
+                ExpandablePowerSankeyFlow(flow: flow, active: active, detailsExpanded: $detailsExpanded)
+                    .animation(active && !reduceMotion
+                               ? .spring(response: 0.36, dampingFraction: 1) : nil, value: flow)
                 Text(ChipBarLocale.choose(
                     "System-to-chip flow is independently valid.",
                     "已验证系统至芯片的功率分流。"))

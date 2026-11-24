@@ -71,31 +71,24 @@ struct PowerSupplyDetailTests {
         #expect(batteryMeasured.systemWatts == 25)
     }
 
-    @Test func macbookPartialDataAlwaysKeepsValidIndependentMeasurements() {
-        let partial = ChipBarPowerReading(
+    @Test func macbookPartialDataDrawsOnlyIndependentlyValidatedSystemSplit() throws {
+        var partial = ChipBarPowerReading(
             hasBattery: true, onAdapter: true, isCharging: true,
             batteryPercent: 60, adapterWatts: 44.7,
             batteryWatts: nil, systemWatts: nil,
             sourceLabel: "partial", live: true)
-        #expect(LaptopPowerPresentation(reading: partial, chipWatts: 26.1)
-                == .independent)
-        #expect(LaptopPowerTopology(reading: partial, chipWatts: 26.1) == nil)
+        #expect(PowerFlowTopology(reading: partial, chipWatts: 26.1) == nil)
+        #expect(PowerFlowTopology(validatedSystemOf: partial, chipWatts: 26.1) == nil)
 
-        var directSystem = partial
-        directSystem.systemWatts = 40.0
-        #expect(LaptopPowerPresentation(reading: directSystem, chipWatts: 26.1)
-                == .systemAndChip)
-        let split = PowerDistribution(internalWatts: directSystem.systemWatts,
-                                      chipWatts: 26.1)
-        #expect(abs((split.otherWatts ?? 0) - 13.9) < 0.001)
+        partial.systemWatts = 40.0
+        let split = try #require(PowerFlowTopology(validatedSystemOf: partial, chipWatts: 26.1))
+        #expect(!split.showsSupply)
+        #expect(split.hasBreakdown)
+        #expect(split.chargeWatts == 0)
+        #expect(abs(split.otherWatts - 13.9) < 0.001)
 
-        directSystem.systemWatts = 19.0 // mismatched sampling, not a real split
-        #expect(LaptopPowerPresentation(reading: directSystem, chipWatts: 26.1)
-                == .independent)
-        directSystem.systemWatts = nil
-        directSystem.adapterWatts = nil
-        #expect(LaptopPowerPresentation(reading: directSystem, chipWatts: nil)
-                == .unavailable)
+        partial.systemWatts = 19.0 // Mismatched sampling cannot form a split.
+        #expect(PowerFlowTopology(validatedSystemOf: partial, chipWatts: 26.1) == nil)
     }
 
     @Test func smcDecodesLegacyAdapterSp96() {
@@ -180,11 +173,11 @@ struct PowerSupplyDetailTests {
             hasBattery: true, onAdapter: true, isCharging: true,
             batteryPercent: 65, adapterWatts: 45, batteryWatts: 0,
             systemWatts: 45, sourceLabel: "test", live: true)
-        #expect(LaptopPowerTopology(reading: reading, chipWatts: 16) == nil)
+        #expect(PowerFlowTopology(reading: reading, chipWatts: 16) == nil)
         reading.batteryWatts = 20
         reading.adapterWatts = 65
         reading.diagnostics.batterySource = "AppleSmartBattery (cached)"
-        #expect(LaptopPowerTopology(reading: reading, chipWatts: 16)?.batteryIsCached == true)
+        #expect(PowerFlowTopology(reading: reading, chipWatts: 16)?.batteryIsCached == true)
     }
 
     @Test func laptopThreeStagePowerSeparatesBatteryChargeFromSystemAndChip() throws {
@@ -192,7 +185,7 @@ struct PowerSupplyDetailTests {
             hasBattery: true, onAdapter: true, isCharging: true, batteryPercent: 65,
             adapterWatts: 65, batteryWatts: 20, systemWatts: 45,
             sourceLabel: "SMC", live: true)
-        let topology = try #require(LaptopPowerTopology(reading: charging, chipWatts: 15))
+        let topology = try #require(PowerFlowTopology(reading: charging, chipWatts: 15))
         #expect(topology.mode == .adapterCharging)
         #expect(topology.sourceWatts == 65)
         #expect(topology.systemWatts == 45)
@@ -211,6 +204,27 @@ struct PowerSupplyDetailTests {
         #expect(chart.leftTop >= 0)
         #expect(chart.chargeTop + chart.chargeHeight <= LaptopSankeyGeometry.height)
         #expect(chart.otherTop + chart.otherHeight <= LaptopSankeyGeometry.height)
+    }
+
+    @Test func desktopBreakdownUsesInternalPowerAndKeepsItWhenChipDataIsMissing() throws {
+        let reading = ChipBarPowerReading(
+            hasBattery: false, onAdapter: true, isCharging: false, batteryPercent: nil,
+            adapterWatts: nil, batteryWatts: nil, systemWatts: 48, sourceLabel: "SMC PSTR", live: true)
+
+        let flow = try #require(PowerFlowTopology(reading: reading, chipWatts: 12))
+        #expect(flow.mode == .desktop)
+        #expect(flow.hasBreakdown)
+        #expect(flow.systemWatts == 48)
+        #expect(flow.chipWatts == 12)
+        #expect(flow.otherWatts == 36)
+        #expect(!flow.hasBatteryTransfer)
+
+        for chip in [nil, 49, Double.nan] {
+            let partial = try #require(PowerFlowTopology(reading: reading, chipWatts: chip))
+            #expect(partial.systemWatts == 48)
+            #expect(!partial.hasBreakdown)
+        }
+        #expect(PowerFlowTopology(reading: .unavailable, chipWatts: 12) == nil)
     }
 
     @Test func laptopSankeyKeepsSmallBranchesVisibleAndJunctionsAligned() {
@@ -236,7 +250,7 @@ struct PowerSupplyDetailTests {
             hasBattery: true, onAdapter: false, isCharging: false, batteryPercent: 40,
             adapterWatts: 0, batteryWatts: -25, systemWatts: 25,
             sourceLabel: "SMC", live: true)
-        let battery = try #require(LaptopPowerTopology(reading: onBattery, chipWatts: 10))
+        let battery = try #require(PowerFlowTopology(reading: onBattery, chipWatts: 10))
         #expect(battery.mode == .battery)
         #expect(battery.sourceWatts == 25)
         #expect(battery.chargeWatts == 0)
@@ -247,7 +261,7 @@ struct PowerSupplyDetailTests {
             hasBattery: true, onAdapter: true, isCharging: false, batteryPercent: 80,
             adapterWatts: 32, batteryWatts: 0, systemWatts: 32,
             sourceLabel: "SMC", live: true)
-        let adapter = try #require(LaptopPowerTopology(reading: adapterOnly, chipWatts: 12))
+        let adapter = try #require(PowerFlowTopology(reading: adapterOnly, chipWatts: 12))
         #expect(adapter.mode == .adapter)
         #expect(adapter.chargeWatts == 0)
         #expect(!adapter.hasBatteryTransfer)
@@ -256,7 +270,7 @@ struct PowerSupplyDetailTests {
             hasBattery: true, onAdapter: true, isCharging: false, batteryPercent: 60,
             adapterWatts: 25, batteryWatts: -15, systemWatts: 40,
             sourceLabel: "SMC", live: true)
-        let assisted = try #require(LaptopPowerTopology(reading: assisting, chipWatts: 18))
+        let assisted = try #require(PowerFlowTopology(reading: assisting, chipWatts: 18))
         #expect(assisted.mode == .adapterAssisted)
         #expect(assisted.sourceWatts == 25)
         #expect(assisted.assistWatts == 15)
@@ -266,7 +280,21 @@ struct PowerSupplyDetailTests {
         let chart = LaptopSankeyGeometry.make(assisted)
         #expect(abs(chart.systemHeight - chart.inputHeight - chart.assistHeight) < 0.001)
         #expect(chart.leftTop == chart.assistTop + chart.assistHeight + LaptopSankeyGeometry.gap)
-        #expect(chart.chipTop == chart.assistTop + 10)
+        #expect(chart.chipTop == chart.systemTop - LaptopSankeyGeometry.gap / 2)
+        #expect(chart.otherTop == chart.systemTop + chart.chipHeight + LaptopSankeyGeometry.gap / 2)
+    }
+
+    @Test func powerBranchesSpreadEvenlyAroundSystemNode() {
+        let split = LaptopSankeyGeometry.make(systemWatts: 48.1, chargeWatts: 0,
+                                                assistWatts: 0, chipWatts: 11.6)
+        let offset = LaptopSankeyGeometry.gap / 2
+        #expect(split.chipTop == split.systemTop - offset)
+        #expect(split.otherTop == split.systemTop + split.chipHeight + offset)
+
+        let unsplit = LaptopSankeyGeometry.make(systemWatts: 12, chargeWatts: 0,
+                                                  assistWatts: 0, chipWatts: 12)
+        #expect(unsplit.chipTop == unsplit.systemTop)
+        #expect(unsplit.otherHeight == 0)
     }
 
     @Test func batteryDirectPowerRailIsPreferredAndCurrentVoltageIsFallback() {
@@ -299,7 +327,7 @@ struct PowerSupplyDetailTests {
             hasBattery: true, onAdapter: true, isCharging: false,
             batteryPercent: 75, adapterWatts: 23.7, batteryWatts: 0,
             systemWatts: 23.7, sourceLabel: "SMC", live: true)
-        let flow = try #require(LaptopPowerTopology(
+        let flow = try #require(PowerFlowTopology(
             reading: pluggedNoCharge, chipWatts: 7.8))
         #expect(flow.mode == .adapter)
         #expect(!flow.hasBatteryTransfer)
@@ -311,7 +339,7 @@ struct PowerSupplyDetailTests {
 
         var charged = pluggedNoCharge
         charged.isCharged = true
-        let full = try #require(LaptopPowerTopology(reading: charged, chipWatts: 7.8))
+        let full = try #require(PowerFlowTopology(reading: charged, chipWatts: 7.8))
         #expect(full.batteryCharged)
         #expect(!full.hasBatteryTransfer)
         // Mac mini's existing Sankey remains independent of the battery path.
@@ -327,17 +355,17 @@ struct PowerSupplyDetailTests {
                 batteryPercent: 70, adapterWatts: adapter, batteryWatts: battery,
                 systemWatts: system, sourceLabel: "SMC", live: live)
         }
-        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+        #expect(PowerFlowTopology(reading: reading(adapter: 65, battery: 20,
                                                      system: 45), chipWatts: 55) == nil)
-        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+        #expect(PowerFlowTopology(reading: reading(adapter: 65, battery: 20,
                                                      system: 35), chipWatts: 15) == nil)
-        #expect(LaptopPowerTopology(reading: reading(adapter: nil, battery: 20,
+        #expect(PowerFlowTopology(reading: reading(adapter: nil, battery: 20,
                                                      system: 45), chipWatts: 15) == nil)
-        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: nil,
+        #expect(PowerFlowTopology(reading: reading(adapter: 65, battery: nil,
                                                      system: 45), chipWatts: 15) == nil)
-        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+        #expect(PowerFlowTopology(reading: reading(adapter: 65, battery: 20,
                                                      system: 45, charging: false), chipWatts: 15) == nil)
-        #expect(LaptopPowerTopology(reading: reading(adapter: 65, battery: 20,
+        #expect(PowerFlowTopology(reading: reading(adapter: 65, battery: 20,
                                                      system: 45, live: false), chipWatts: 15) == nil)
     }
 
