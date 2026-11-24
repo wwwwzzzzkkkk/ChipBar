@@ -206,19 +206,11 @@ private struct SidePanelContentHeightKey: PreferenceKey {
     }
 }
 
-/// Use the display's visible height in points, including the current macOS scaling.
+/// Pure sizing logic shared by the sidecar and its regression tests.
+/// There is intentionally no arbitrary 540pt cap: tall displays can show
+/// every node and task; compact displays scroll within the screen bounds.
 enum ClusterSidecarSizing {
     static let minimumHeight: CGFloat = 210
-
-    static func usesCompactLayout(available: CGFloat) -> Bool {
-        available.isFinite && available > 0 && available <= 960
-    }
-
-    private static func heightLimit(available: CGFloat) -> CGFloat {
-        let usable = available - edgeInset * 2
-        let preferred = usesCompactLayout(available: available) ? floor(available * 0.82) : usable
-        return max(1, min(usable, preferred))
-    }
     static let edgeInset: CGFloat = 8
     // AppKit/SwiftUI can disagree by a few points on the first intrinsic fit.
     // Those corrections are visual noise, not new content worth moving a panel.
@@ -227,7 +219,7 @@ enum ClusterSidecarSizing {
     static func shouldResizeWindow(from current: CGFloat, to proposed: CGFloat,
                                    available: CGFloat, userDisclosurePinned: Bool) -> Bool {
         guard current.isFinite, proposed.isFinite, available.isFinite else { return false }
-        if current > heightLimit(available: available) + 1 { return true }
+        if current > max(1, available - edgeInset * 2) + 1 { return true }
         return !userDisclosurePinned && abs(current - proposed) > resizeTolerance
     }
 
@@ -241,7 +233,7 @@ enum ClusterSidecarSizing {
     }
 
     static func windowHeight(content: CGFloat, available: CGFloat) -> CGFloat {
-        let limit = heightLimit(available: available)
+        let limit = max(1, available - edgeInset * 2)
         guard content.isFinite, content > 0 else {
             return min(minimumHeight, limit)
         }
@@ -281,7 +273,6 @@ struct DashboardSidePanelView: View {
     /// Explicit kind avoids @Published's didSet timing: the sidecar always
     /// mounts the selected page before its native window becomes visible.
     var kindOverride: DashboardSidePanelKind? = nil
-    var compactCluster = false
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
 
     private var displayedKind: DashboardSidePanelKind? {
@@ -316,7 +307,7 @@ struct DashboardSidePanelView: View {
                     ExternalDiskDetailView(volumeID: id, ssd: monitor.ssd, close: close)
                 }
             case .cluster:
-                ClusterMonitorPanel(monitor: monitor, close: close, compact: compactCluster)
+                ClusterMonitorPanel(monitor: monitor, close: close)
             case nil:
                 EmptyView()
             }

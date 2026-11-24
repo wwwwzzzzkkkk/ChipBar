@@ -422,7 +422,7 @@ extension View {
 struct ChipBarAdaptiveTileLayout: Layout {
     let tracks = 6
     let columnGap: CGFloat = 8
-    let rowGap: CGFloat = 10
+    var rowGap: CGFloat = 10
 
     private struct Placement {
         let origin: CGPoint

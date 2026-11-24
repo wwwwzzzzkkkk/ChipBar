@@ -13,6 +13,7 @@ struct DashboardRunway: View {
     var active = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.compactDashboard) private var compact
 
     private var fraction: Double {
         guard let percentage, percentage.isFinite else { return 0 }
@@ -24,8 +25,8 @@ struct DashboardRunway: View {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
-                .frame(height: 20)
-                .padding(.bottom, 4)
+                .frame(height: compact ? 16 : 20)
+                .padding(.bottom, compact ? 3 : 4)
             ZStack {
                 Circle()
                     .stroke(.quaternary, lineWidth: 6)
@@ -44,8 +45,8 @@ struct DashboardRunway: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 65, height: 65)
-            .padding(.bottom, 10)
+            .frame(width: compact ? 51 : 65, height: compact ? 51 : 65)
+            .padding(.bottom, compact ? 5 : 10)
             .accessibilityHidden(true)
             Text(subtitle)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -63,7 +64,7 @@ struct DashboardRunway: View {
                 .frame(height: 16)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
+        .padding(.vertical, compact ? 7 : 10)
         .padding(.horizontal, 5)
         .glassTile(radius: 26)
         .accessibilityElement(children: .ignore)
@@ -91,6 +92,7 @@ private struct RunwayPercentage: View, Animatable {
 struct DashboardANEStrip: View {
     let power: Double?
     let connected: Bool
+    @Environment(\.compactDashboard) private var compact
 
     var body: some View {
         HStack(spacing: 7) {
@@ -109,7 +111,7 @@ struct DashboardANEStrip: View {
         }
         .padding(.horizontal, 11)
         .frame(maxWidth: .infinity)
-        .frame(height: 43)
+        .frame(height: compact ? 35 : 43)
         .glassTile(radius: 26)
         .accessibilityElement(children: .combine)
     }

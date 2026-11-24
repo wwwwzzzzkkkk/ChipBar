@@ -4,6 +4,29 @@ import ChipBarCore
 
 enum DashboardLayout {
     static let width: CGFloat = 378
+
+    static func usesCompactHome(visibleHeight: CGFloat) -> Bool {
+        visibleHeight.isFinite && visibleHeight > 0 && visibleHeight <= 960
+    }
+
+    static func viewportLimit(availableHeight: CGFloat, compact: Bool) -> CGFloat {
+        max(1, floor(availableHeight * (compact ? 0.90 : 1)))
+    }
+
+    static func columns(for tile: DashboardTile, compact: Bool) -> Int {
+        compact && (tile == .applications || tile == .cluster) ? 3 : tile.columns
+    }
+}
+
+private struct CompactDashboardKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var compactDashboard: Bool {
+        get { self[CompactDashboardKey.self] }
+        set { self[CompactDashboardKey.self] = newValue }
+    }
 }
 
 enum DashboardMotion {
@@ -19,6 +42,7 @@ enum DashboardMotion {
 
 final class DashboardState: ObservableObject {
     @Published var sidePanel: DashboardSidePanelKind? = nil
+    @Published var compactHome = false
     @Published var selectedExternalVolumeID: String? = nil
     @Published var chartMetric: PowerMetric = .total
     @Published var showSettings = false
@@ -103,7 +127,7 @@ struct Dashboard: View {
         // the scroller and clip the right-hand side of the glass popover.
         .frame(width: DashboardLayout.width - 30, alignment: .topLeading)
         .padding(.horizontal, 15)
-        .padding(.vertical, 14)
+        .padding(.vertical, state.compactHome && !showsDeviceAndSettings ? 10 : 14)
         .frame(width: DashboardLayout.width, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: .infinity, alignment: .topLeading)
@@ -124,12 +148,13 @@ struct Dashboard: View {
         DashboardGlassContainer {
             monitoringTiles
         }
+        .environment(\.compactDashboard, state.compactHome)
     }
 
     /// Reorderable six-track mosaic. Stable tile identities preserve
     /// animated gauges and background sampling when tiles move.
     private var monitoringTiles: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: state.compactHome ? 6 : 10) {
             HStack(spacing: 8) {
                 header
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,7 +177,7 @@ struct Dashboard: View {
                 .accessibilityLabel(ChipBarLocale.choose(tileLayout.editing ? "Finish arranging tiles" : "Customize tile layout", tileLayout.editing ? "完成磁贴排列" : "自定义磁贴排列"))
             }
 
-            ChipBarAdaptiveTileLayout {
+            ChipBarAdaptiveTileLayout(rowGap: state.compactHome ? 6 : 10) {
                 ForEach(tileLayout.visible) { tile in
                     homeTile(tile)
                         // Keep the hit target active during the same mouse
@@ -215,7 +240,7 @@ struct Dashboard: View {
                                 }
                         )
                         .accessibilityHint("长按约半秒进入排列模式，然后按住直接移动；松手弹性落位")
-                        .chipBarTileSpan(tile.columns)
+                        .chipBarTileSpan(DashboardLayout.columns(for: tile, compact: state.compactHome))
                 }
             }
             .coordinateSpace(name: "chipbar.tileMosaic")
@@ -368,10 +393,12 @@ struct Dashboard: View {
 
     /// One and only one power history chart: the headline and real rolling
     /// 10-minute graph form the dashboard's single information focal point.
-    // The headline and y-axis now share the same top boundary. Both columns
-    // reserve exactly 70 pt, so loading/empty states do not shift the header.
+    // The heading and plot share a fixed height for each density so
+    // loading and live samples align to the same top boundary.
+    private var powerChartHeight: CGFloat { state.compactHome ? 56 : 70 }
+
     private var totalPowerHeadline: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: state.compactHome ? 1 : 3) {
             Text("芯片总功率")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -386,7 +413,7 @@ struct Dashboard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(height: 34, alignment: .leading)
+            .frame(height: state.compactHome ? 28 : 34, alignment: .leading)
             Text("CPU + GPU + ANE")
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
@@ -394,7 +421,7 @@ struct Dashboard: View {
                 .minimumScaleFactor(0.8)
                 .frame(height: 12, alignment: .leading)
         }
-        .frame(width: 82, height: 70, alignment: .topLeading)
+        .frame(width: 82, height: powerChartHeight, alignment: .topLeading)
     }
 
     @ViewBuilder private var totalPowerChart: some View {
@@ -403,7 +430,7 @@ struct Dashboard: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 70)
+                .frame(height: powerChartHeight)
         } else {
             PowerTrendPlot(
                 points: monitor.powerChart.points,
@@ -411,17 +438,17 @@ struct Dashboard: View {
                 timeline: monitor.powerChart.timeline,
                 accent: accent
             )
-            .frame(height: 70)
+            .frame(height: powerChartHeight)
         }
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: state.compactHome ? 5 : 8) {
             HStack(alignment: .top, spacing: 4) {
                 totalPowerHeadline
                 totalPowerChart
             }
-            .frame(height: 70, alignment: .top)
+            .frame(height: powerChartHeight, alignment: .top)
             HStack(spacing: 8) {
                 Text("最近 10 分钟")
                 Spacer()
@@ -431,7 +458,7 @@ struct Dashboard: View {
             .font(.system(size: 9))
             .foregroundStyle(.secondary)
         }
-        .padding(12)
+        .padding(state.compactHome ? 9 : 12)
         .glassTile(radius: 26)
     }
 
@@ -493,7 +520,7 @@ struct Dashboard: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 11)
-            .frame(height: 41)
+            .frame(height: state.compactHome ? 39 : 41)
             .glassTile(radius: 21, tint: selected ? accent.opacity(0.13) : nil,
                        interactive: true)
             .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
@@ -542,7 +569,7 @@ struct Dashboard: View {
         }
         .padding(.horizontal, 11)
         .frame(maxWidth: .infinity)
-        .frame(height: 43)
+        .frame(height: state.compactHome ? 35 : 43)
         .glassTile(radius: 26)
     }
 

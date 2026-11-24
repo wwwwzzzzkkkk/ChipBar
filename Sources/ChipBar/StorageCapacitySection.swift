@@ -177,8 +177,10 @@ struct StorageCapacitySection: View {
         }
     }
 
+    @Environment(\.compactDashboard) private var compact
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
             HStack {
                 Label("储存空间", systemImage: "internaldrive")
                     .font(.subheadline.weight(.medium))
@@ -188,7 +190,7 @@ struct StorageCapacitySection: View {
                     .foregroundStyle(.secondary)
             }
 
-            LazyVGrid(columns: columns, spacing: 8) {
+            LazyVGrid(columns: columns, spacing: compact ? 5 : 8) {
                 internalCard
                 if showsExternalDrive {
                     externalCards
@@ -223,6 +225,7 @@ private struct StorageVolumeCard: View {
     var showsChevron = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.compactDashboard) private var compact
 
     private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
 
@@ -356,7 +359,7 @@ private struct StorageVolumeCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: compact ? 2 : 5) {
             cardHeader.frame(height: 16, alignment: .center)
             capacityReadout
             usageLine.frame(height: 12, alignment: .center)
@@ -365,8 +368,8 @@ private struct StorageVolumeCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // 16 + 36 + 12 + 13 + 3*5 = 92 pt. The remaining 4 pt is
         // distributed equally above and below, including empty-data states.
-        .frame(height: 96, alignment: .center)
-        .padding(10)
+        .frame(height: compact ? 84 : 96, alignment: .center)
+        .padding(compact ? 7 : 10)
         .glassTile(radius: 26, interactive: showsChevron)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)

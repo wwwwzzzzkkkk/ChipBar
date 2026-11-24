@@ -7,6 +7,7 @@ struct PowerOverviewHomeTile: View {
     let reading: ChipBarPowerReading
     let selected: Bool
     let open: () -> Void
+    @Environment(\.compactDashboard) private var compact
 
     private let inputTint = Color(red: 0.98, green: 0.73, blue: 0.30)
     private let outputTint = Color(red: 0.22, green: 0.76, blue: 0.80)
@@ -26,7 +27,7 @@ struct PowerOverviewHomeTile: View {
 
     var body: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: compact ? 6 : 10) {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.horizontal.circle")
                         .font(.system(size: 13))
@@ -44,7 +45,7 @@ struct PowerOverviewHomeTile: View {
                                icon: "bolt.fill", tint: inputTint)
                     Rectangle()
                         .fill(Color.primary.opacity(0.13))
-                        .frame(width: 1, height: 40)
+                        .frame(width: 1, height: compact ? 33 : 40)
                         .accessibilityHidden(true)
                     powerValue("USB-C 输出", watts: reading.usb.totalWatts,
                                icon: "cable.connector", tint: outputTint)
@@ -60,7 +61,7 @@ struct PowerOverviewHomeTile: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             }
-            .padding(12)
+            .padding(compact ? 8 : 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassTile(radius: 26, tint: selected ? outputTint.opacity(0.12) : nil,
                        interactive: true)
@@ -76,7 +77,7 @@ struct PowerOverviewHomeTile: View {
 
     private func powerValue(_ title: String, watts: Double?,
                             icon: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: compact ? 2 : 5) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .foregroundStyle(tint)

@@ -5,6 +5,7 @@ struct CPUCoreUsageSection: View {
     let active: Bool
     @StateObject private var model = CPUCoreLoadModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.compactDashboard) private var compact
     private let topology = CPUCoreTopology.current
 
     private var verifiedCoreLabels: Bool {
@@ -37,7 +38,7 @@ struct CPUCoreUsageSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             HStack(spacing: 7) {
                 Text("CPU 各核心").font(.caption.weight(.semibold))
                 Spacer(minLength: 3)
@@ -64,7 +65,7 @@ struct CPUCoreUsageSection: View {
                 if model.values.isEmpty {
                     Text("等待两次 CPU 计数器采样")
                         .font(.caption2).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity).frame(height: 47)
+                        .frame(maxWidth: .infinity).frame(height: compact ? 32 : 47)
                 } else {
                     ForEach(Array(model.values.enumerated()), id: \.offset) { index, percent in
                         GeometryReader { geo in
@@ -84,9 +85,9 @@ struct CPUCoreUsageSection: View {
                         .accessibilityValue("\(Int(percent.rounded()))%")
                     }
                 }
-            }.frame(height: 47)
+            }.frame(height: compact ? 32 : 47)
         }
-        .padding(.horizontal, 10).padding(.vertical, 9)
+        .padding(.horizontal, 10).padding(.vertical, compact ? 7 : 9)
         .glassTile(radius: 26)
         .task(id: "\(samplingInterval)-\(active)") {
             guard active else { return }

@@ -84,6 +84,7 @@ enum DashboardViewportHeight {
         var volumeIDs: [String]
         var externalIDs: [String]
         var tileLayoutRevision: Int
+        var compact: Bool
     }
     private var cachedHomeLayout: (key: HomeLayoutKey, height: CGFloat)?
 
@@ -95,7 +96,8 @@ enum DashboardViewportHeight {
                              connected: monitor.connected,
                              volumeIDs: storage.volumes.map(\.id),
                              externalIDs: (storage.activity?.external ?? []).sorted(),
-                             tileLayoutRevision: DashboardTileLayoutModel.shared.layoutRevision)
+                             tileLayoutRevision: DashboardTileLayoutModel.shared.layoutRevision,
+                             compact: dashboardState.compactHome)
     }
 
     private func openProfileMark(_ phase: String, since start: TimeInterval) {
@@ -481,6 +483,14 @@ enum DashboardViewportHeight {
         observers.append(center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.menuTracking = false }
         })
+        observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                            object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.panelRequestedVisible, let (rect, screen) = self.anchor() else { return }
+                self.updateViewport(anchor: rect, visible: screen.visibleFrame)
+                self.refresh(forceLayout: true)
+            }
+        })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.recordMouseQA("applicationResignedActive")
@@ -576,6 +586,16 @@ enum DashboardViewportHeight {
         return (window.convertToScreen(button.convert(button.bounds, to: nil)), screen)
     }
 
+    private func updateViewport(anchor: NSRect, visible: NSRect) {
+        let compact = DashboardLayout.usesCompactHome(visibleHeight: visible.height)
+        let available = min(anchor.minY - 6, visible.maxY - 6) - visible.minY - 8
+        maximumHeight = DashboardLayout.viewportLimit(availableHeight: available, compact: compact)
+        if dashboardState.compactHome != compact {
+            dashboardState.compactHome = compact
+            monitoringPageHeight = nil
+        }
+    }
+
     private func panelFrame(size: NSSize) -> NSRect? {
         guard let (rect, screen) = anchor() else { return nil }
         let visible = screen.visibleFrame
@@ -659,7 +679,7 @@ enum DashboardViewportHeight {
         autoDismissal?.cancel(); autoDismissal = nil
         if !shouldOpen { hidePanel(); return }
         guard let (rect, screen) = anchor() else { return }
-        maximumHeight = max(250, min(rect.minY - 6, screen.visibleFrame.maxY - 6) - screen.visibleFrame.minY - 8)
+        updateViewport(anchor: rect, visible: screen.visibleFrame)
         synchronizeAppearanceForOpen()
         // Restore the initial dashboard on EVERY opening, including a rapid
         // close -> reopen while the NSPanel fade-out is still in progress.
