@@ -4,7 +4,6 @@ struct LaptopPowerFallbackView: View {
     let reading: ChipBarPowerReading
     let chipWatts: Double?
     let active: Bool
-    @Binding var detailsExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var batteryStatus: String {
@@ -110,7 +109,7 @@ struct LaptopPowerFallbackView: View {
             }
 
             if let flow = PowerFlowTopology(validatedSystemOf: reading, chipWatts: chipWatts) {
-                ExpandablePowerSankeyFlow(flow: flow, active: active, detailsExpanded: $detailsExpanded)
+                PowerSankeyDiagram(flow: flow, active: active)
                     .animation(active && !reduceMotion
                                ? .spring(response: 0.36, dampingFraction: 1) : nil, value: flow)
                 Text(ChipBarLocale.choose(

@@ -99,7 +99,6 @@ private enum LaptopFlowStyle {
     static let outputStartColor = Color(red: 0.34, green: 0.39, blue: 0.52)
     static let outputEndColor = Color(red: 0.30, green: 0.31, blue: 0.33)
     static let gradientOpacity = 0.64
-    static let disclosure = Animation.easeInOut(duration: 0.32)
     static let crossfade = Animation.easeInOut(duration: 0.18)
     static let mergeMidpoint = centerlineMidpoint(start: 0, end: mergeEnd)
     static let splitMidpoint = centerlineMidpoint(start: splitStart, end: 1)
@@ -179,8 +178,7 @@ struct LaptopSankeyGeometry {
         let chipH = otherWatts > 0
             ? min(max(CGFloat(chipWatts) * s, chipMinimum), systemH - otherMinimum) : systemH
         let otherH = systemH - chipH
-        // Place the merged flow between the two input lanes. The inlet and
-        // outlet remain aligned while disclosure only extends the right side.
+        // Place the merged flow between the two input lanes.
         let top = labelInset
         let inputGap = inputH > 0 && assistH > 0 ? gap : 0
         let systemTop = top + inputGap / 2
@@ -205,19 +203,17 @@ struct LaptopSankeyGeometry {
     }
 }
 
-struct ExpandablePowerSankeyFlow: View, Animatable {
+struct PowerSankeyDiagram: View, Animatable {
     typealias ChartWatts = AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>>
     let flow: PowerFlowTopology
     let active: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    @Binding var detailsExpanded: Bool
     var animatableData: ChartWatts
 
-    init(flow: PowerFlowTopology, active: Bool, detailsExpanded: Binding<Bool>) {
+    init(flow: PowerFlowTopology, active: Bool) {
         self.flow = flow
         self.active = active
-        _detailsExpanded = detailsExpanded
         animatableData = ChartWatts(
             AnimatablePair(flow.systemWatts, flow.chargeWatts),
             AnimatablePair(flow.assistWatts, flow.chipWatts))
@@ -318,58 +314,36 @@ struct ExpandablePowerSankeyFlow: View, Animatable {
         let title = flow.mode == .desktop
             ? ChipBarLocale.choose("Internal power", "内部功率")
             : ChipBarLocale.choose("System power", "系统功率")
-        let radius = LaptopFlowStyle.cornerRadius(width: width, height: height)
-        let action = !flow.hasBreakdown
-            ? ChipBarLocale.choose("Waiting for a valid chip reading", "等待有效的芯片功率读数")
-            : detailsExpanded ? ChipBarLocale.choose("Hide system breakdown", "收起系统用电明细")
-                                     : ChipBarLocale.choose("Show system breakdown", "展开系统用电明细")
-        return Button {
-            detailsExpanded.toggle()
-        } label: {
-            ViewThatFits(in: .vertical) {
-                VStack(spacing: 4) {
-                    Image(systemName: flow.mode == .desktop ? "desktopcomputer" : "laptopcomputer")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+        return ViewThatFits(in: .vertical) {
+            VStack(spacing: 4) {
+                Image(systemName: flow.mode == .desktop ? "desktopcomputer" : "laptopcomputer")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                wattLabel(value, size: 13).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 3) {
+                if flow.mode == .desktop {
                     Text(title)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 9, weight: .medium))
                         .lineLimit(1)
                         .minimumScaleFactor(0.65)
-                    wattLabel(value, size: 13).foregroundStyle(.secondary)
-                    disclosureIndicator(size: 8)
                 }
-                HStack(spacing: 3) {
-                    if flow.mode == .desktop {
-                        Text(title)
-                            .font(.system(size: 9, weight: .medium))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-                    }
-                    wattLabel(value, size: 11)
-                    disclosureIndicator(size: 7)
-                }
+                wattLabel(value, size: 11)
             }
-            .padding(.horizontal, 4)
-            .frame(width: width, height: height)
-            .background {
-                Color.clear
-                    .glassTile(radius: radius)
-                    .allowsHitTesting(false)
-            }
-            .contentShape(.rect(cornerRadius: radius))
         }
-        .buttonStyle(.plain)
-        .disabled(!flow.hasBreakdown)
-        .help(action)
+        .padding(.horizontal, 4)
+        .frame(width: width, height: height)
+        .background {
+            Color.clear
+                .glassTile(radius: LaptopFlowStyle.cornerRadius(width: width, height: height))
+                .allowsHitTesting(false)
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(title + ", " + watts(value) + " W")
-        .accessibilityHint(action)
-    }
-
-    private func disclosureIndicator(size: CGFloat) -> some View {
-        Image(systemName: "chevron.right")
-            .font(.system(size: size, weight: .semibold))
-            .rotationEffect(.degrees(detailsExpanded ? 90 : 0))
-            .opacity(flow.hasBreakdown ? 1 : 0)
     }
 
     private enum RibbonEdge { case top, bottom }
@@ -447,7 +421,6 @@ struct ExpandablePowerSankeyFlow: View, Animatable {
             let geometry = LaptopSankeyGeometry.make(
                 systemWatts: system, chargeWatts: charge, assistWatts: assist, chipWatts: chip)
             let hasInputs = flow.showsSupply
-            let showDetails = flow.hasBreakdown && detailsExpanded
             let columns = Columns(width: proxy.size.width, hasInputs: hasInputs)
             let inputX = (columns.inlet + columns.merge) / 2
             let outputX = (columns.split + columns.outlet) / 2
@@ -470,18 +443,20 @@ struct ExpandablePowerSankeyFlow: View, Animatable {
                                                    : ChipBarLocale.choose("Other", "其他")
 
             if hasInputs {
-                glassRibbons(LaptopPowerGlassShape(ribbons: supply, anchor: columns.merge, expansion: 1),
+                glassRibbons(LaptopPowerGlassShape(ribbons: supply),
                              from: LaptopFlowStyle.inputStartColor, to: LaptopFlowStyle.inputEndColor,
                              x0: columns.inlet, x1: columns.merge, width: proxy.size.width)
             }
 
-            glassRibbons(LaptopPowerGlassShape(ribbons: outputs, anchor: columns.split,
-                                              expansion: showDetails || reduceMotion ? 1 : 0),
-                         from: LaptopFlowStyle.outputStartColor, to: LaptopFlowStyle.outputEndColor,
-                         x0: columns.split, x1: columns.outlet, width: proxy.size.width)
-                .opacity(showDetails || !reduceMotion ? 1 : 0)
-                .animation(reduceMotion ? LaptopFlowStyle.crossfade : LaptopFlowStyle.disclosure,
-                           value: showDetails)
+            if flow.hasBreakdown {
+                glassRibbons(LaptopPowerGlassShape(ribbons: outputs),
+                             from: LaptopFlowStyle.outputStartColor, to: LaptopFlowStyle.outputEndColor,
+                             x0: columns.split, x1: columns.outlet, width: proxy.size.width)
+            }
+
+            if active && !reduceMotion && (!supply.isEmpty || !outputs.isEmpty) {
+                PowerRibbonGlint(supply: supply, outputs: outputs)
+            }
 
             if geometry.assistHeight > 0 {
                 endpoint(batteryTitle, symbol: "battery.75percent",
@@ -519,7 +494,7 @@ struct ExpandablePowerSankeyFlow: View, Animatable {
                     .position(x: columns.system, y: chargeY)
             }
 
-            Group {
+            if flow.hasBreakdown {
                 if geometry.chipHeight > 0 {
                     endpoint(chipTitle, symbol: "cpu", height: geometry.chipHeight, width: columns.endpointWidth)
                         .position(x: columns.destination, y: geometry.chipTop + geometry.chipHeight / 2)
@@ -546,12 +521,6 @@ struct ExpandablePowerSankeyFlow: View, Animatable {
                                   + (geometry.otherTop - outputBoundary) * LaptopFlowStyle.splitMidpoint)
                 }
             }
-            .opacity(showDetails ? 1 : 0)
-            .animation(reduceMotion ? LaptopFlowStyle.crossfade
-                       : .easeOut(duration: 0.16).delay(showDetails ? 0.16 : 0),
-                       value: showDetails)
-            .accessibilityHidden(!showDetails)
-            .allowsHitTesting(false)
         }
         .frame(height: LaptopSankeyGeometry.height)
     }
@@ -612,21 +581,48 @@ struct ExpandablePowerSankeyFlow: View, Animatable {
 
 private struct LaptopPowerGlassShape: Shape {
     let ribbons: Path
-    let anchor: CGFloat
-    var expansion: CGFloat
-
-    var animatableData: CGFloat {
-        get { expansion }
-        set { expansion = newValue }
-    }
 
     func path(in rect: CGRect) -> Path {
-        guard expansion > 0 else { return Path() }
-        let path = ribbons.applying(CGAffineTransform(
-            a: expansion, b: 0, c: 0, d: 1, tx: anchor * (1 - expansion), ty: 0))
         if #available(macOS 26.0, *) {
-            return path.normalized(eoFill: false)
+            return ribbons.normalized(eoFill: false)
         }
-        return path
+        return ribbons
+    }
+}
+
+private struct PowerRibbonGlint: View {
+    let supply: Path
+    let outputs: Path
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let path = Path { path in
+            path.addPath(supply)
+            path.addPath(outputs)
+        }
+        let bounds = path.boundingRect
+        let opacity = colorScheme == .dark ? 0.17 : 0.26
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { frame in
+            Canvas { context, _ in
+                let halfWidth = min(34, max(15, bounds.width * 0.11))
+                let speed = 105.0
+                let travel = bounds.width + 2 * halfWidth + speed * 0.6
+                let elapsed = frame.date.timeIntervalSinceReferenceDate
+                let offset = (elapsed * speed).truncatingRemainder(dividingBy: travel)
+                let x = bounds.minX - halfWidth + offset
+                let glint = GraphicsContext.Shading.linearGradient(
+                    Gradient(stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .white.opacity(opacity * 0.4), location: 0.34),
+                        .init(color: .white.opacity(opacity), location: 0.54),
+                        .init(color: .clear, location: 1)
+                    ]),
+                    startPoint: CGPoint(x: x - halfWidth, y: 0),
+                    endPoint: CGPoint(x: x + halfWidth, y: 0))
+                context.fill(path, with: glint)
+            }
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 }

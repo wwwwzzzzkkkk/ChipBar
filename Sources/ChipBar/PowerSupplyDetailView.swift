@@ -362,7 +362,6 @@ struct PowerSupplyDetailView: View {
     let active: Bool
     let close: () -> Void
     @ObservedObject private var sampler = ChipBarPowerFlowModel.shared
-    @State(initialValue: false) private var showsPowerBreakdown: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var reading: ChipBarPowerReading { sampler.reading }
@@ -416,8 +415,7 @@ struct PowerSupplyDetailView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         let flow = topology
                         let powerFlow = flow.map {
-                            ExpandablePowerSankeyFlow(flow: $0, active: active && reading.live,
-                                                  detailsExpanded: $showsPowerBreakdown)
+                            PowerSankeyDiagram(flow: $0, active: active && reading.live)
                         }
                         HStack(alignment: .firstTextBaseline) {
                             Text("功率流向").font(.caption.weight(.semibold))
@@ -443,8 +441,7 @@ struct PowerSupplyDetailView: View {
                             LaptopPowerFallbackView(
                                 reading: reading,
                                 chipWatts: sampler.chipWattsAtReading,
-                                active: active && reading.live,
-                                detailsExpanded: $showsPowerBreakdown)
+                                active: active && reading.live)
                         } else {
                             Text(ChipBarLocale.choose("Waiting for internal power", "等待内部功率读数"))
                                 .font(.caption)
