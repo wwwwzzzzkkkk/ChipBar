@@ -46,6 +46,7 @@ struct ClusterMonitorPanel: View {
     @ObservedObject private var cluster = ClusterMonitorService.shared
     @ObservedObject var monitor: Monitor
     let close: () -> Void
+    var compact = false
     @State private var showNetworkHelp = false
     @State private var expandedTaskNodeIDs: Set<String> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -53,7 +54,7 @@ struct ClusterMonitorPanel: View {
     private let accent = Color(red: 0.22, green: 0.65, blue: 0.79)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             HStack(spacing: 8) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .foregroundStyle(accent)
@@ -114,7 +115,7 @@ struct ClusterMonitorPanel: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(11)
+                .padding(compact ? 8 : 11)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
             }
@@ -167,7 +168,7 @@ struct ClusterMonitorPanel: View {
     }
 
     private func nearbyCard(_ device: ClusterNearbyDevice) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
             HStack(spacing: 7) {
                 Image(systemName: "laptopcomputer")
                     .foregroundStyle(accent)
@@ -187,7 +188,7 @@ struct ClusterMonitorPanel: View {
                let reading = cluster.peers.first(where: { $0.id == device.id }) {
                 if reading.isOnline() {
                     metricRow(reading)
-                    healthRow(reading)
+                    healthRow(reading, showsChip: compact)
                     taskList(reading)
                 } else {
                     Label("设备离线", systemImage: "wifi.slash")
@@ -201,9 +202,9 @@ struct ClusterMonitorPanel: View {
                 }
             }
         }
-        .padding(11)
+        .padding(compact ? 8 : 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassTile(radius: 20)
+        .glassTile(radius: compact ? 16 : 20)
     }
 
     private func pairingCard(_ pairing: ClusterPairingCandidate) -> some View {
@@ -235,7 +236,7 @@ struct ClusterMonitorPanel: View {
     }
 
     private func nodeCard(_ node: ClusterNodeReadout, local: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
             HStack(spacing: 7) {
                 Image(systemName: local ? "desktopcomputer" : "laptopcomputer")
                     .foregroundStyle(accent)
@@ -252,10 +253,13 @@ struct ClusterMonitorPanel: View {
                                            node.isOnline() ? "在线" : "离线"))
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            Text(node.chip).font(.caption2).foregroundStyle(.secondary)
-            if (local && monitor.connected) || (!local && node.isOnline()) {
+            let hasData = local ? monitor.connected : node.isOnline()
+            if !compact || !hasData {
+                Text(node.chip).font(.caption2).foregroundStyle(.secondary)
+            }
+            if hasData {
                 metricRow(node)
-                healthRow(node)
+                healthRow(node, showsChip: compact)
                 taskList(node)
             } else {
                 Label(local ? "等待监控数据" : "设备离线",
@@ -263,9 +267,9 @@ struct ClusterMonitorPanel: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
-        .padding(11)
+        .padding(compact ? 8 : 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassTile(radius: 20)
+        .glassTile(radius: compact ? 16 : 20)
     }
 
     private func metricRow(_ node: ClusterNodeReadout) -> some View {
@@ -281,8 +285,15 @@ struct ClusterMonitorPanel: View {
 
     /// Keep CPU temperature and measured fan RPM in one stable-height row.
     /// Unavailable fan sensors are explicitly unknown (not fabricated 0 RPM).
-    private func healthRow(_ node: ClusterNodeReadout) -> some View {
-        HStack(spacing: 10) {
+    private func healthRow(_ node: ClusterNodeReadout, showsChip: Bool) -> some View {
+        HStack(spacing: compact ? 7 : 10) {
+            if showsChip, !node.chip.isEmpty {
+                Text(node.chip)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(node.chip)
+                Spacer(minLength: 0)
+            }
             Label(node.cpuTemperatureC.map {
                 String(format: "CPU %.1f°C", $0)
             } ?? "CPU —", systemImage: "thermometer.medium")
@@ -301,9 +312,13 @@ struct ClusterMonitorPanel: View {
     /// Each Mac owns one collapsible group. Multiple simulations default
     /// to a compact summary so the sidecar stays readable at high density.
     @ViewBuilder private func taskList(_ node: ClusterNodeReadout) -> some View {
-        if !node.tasks.isEmpty {
+        if let first = node.tasks.first {
             Divider()
-            if node.tasks.count > 1 {
+            if compact || node.tasks.count > 1 {
+                let title = node.tasks.count > 1
+                    ? ChipBarLocale.format("Parallel simulations · %d", "并行仿真 · %d 项", node.tasks.count)
+                    : first.title
+                let summary = node.tasks.count > 1 ? groupSummary(node.tasks) : taskSummary(first)
                 let expanded = expandedTaskNodeIDs.contains(node.id)
                 Button {
                     // Do not put the entire panel in a SwiftUI animation
@@ -315,11 +330,11 @@ struct ClusterMonitorPanel: View {
                     HStack(spacing: 6) {
                         Image(systemName: "square.stack.3d.up")
                             .foregroundStyle(accent)
-                        Text(ChipBarLocale.format("Parallel simulations · %d", "并行仿真 · %d 项", node.tasks.count))
+                        Text(title)
                             .font(.caption.weight(.semibold))
                             .lineLimit(1).minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
-                        Text(groupSummary(node.tasks))
+                        Text(summary)
                             .font(.caption2).foregroundStyle(.secondary)
                             .lineLimit(1).minimumScaleFactor(0.8)
                         Image(systemName: "chevron.down")
@@ -333,11 +348,14 @@ struct ClusterMonitorPanel: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(expanded ? "折叠并行仿真" : "展开并行仿真")
-                if let average = averageKnownProgress(node.tasks) {
+                .accessibilityLabel(title + ", " + summary)
+                .accessibilityHint(expanded
+                    ? ChipBarLocale.choose("Collapse task details", "折叠任务详情")
+                    : ChipBarLocale.choose("Expand task details", "展开任务详情"))
+                if !compact, let average = averageKnownProgress(node.tasks) {
                     ProgressView(value: average).tint(accent).controlSize(.mini)
                 }
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: compact ? 4 : 8) {
                     if expanded {
                         ForEach(node.tasks) { task in
                             taskDetail(task)
@@ -351,8 +369,8 @@ struct ClusterMonitorPanel: View {
                     value: expanded
                 )
                 .clipped()
-            } else if let task = node.tasks.first {
-                taskDetail(task)
+            } else {
+                taskDetail(first)
             }
         }
     }
@@ -370,6 +388,11 @@ struct ClusterMonitorPanel: View {
         }
         let count = tasks.filter { $0.progress != nil }.count
         return ChipBarLocale.format("Progress %d/%d known", "项目进度 %d/%d 已知", count, tasks.count)
+    }
+
+    private func taskSummary(_ task: ClusterTaskReadout) -> String {
+        if let progress = task.progress { return String(format: "%.1f%%", progress * 100) }
+        return task.state
     }
 
     private func taskDetail(_ task: ClusterTaskReadout) -> some View {
@@ -428,11 +451,15 @@ struct ClusterMonitorPanel: View {
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let layout = compact ? AnyLayout(HStackLayout(spacing: 4))
+                             : AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+        return layout {
             Text(ChipBarLocale.localized(label)).font(.system(size: 9)).foregroundStyle(.secondary)
             Text(value).font(.system(size: 10, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                .monospacedDigit()
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

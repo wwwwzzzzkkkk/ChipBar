@@ -274,6 +274,7 @@ import QuartzCore
         host.rootView = AnyView(DashboardSidePanelView(
             monitor: monitor, state: state, close: onClose,
             kindOverride: kind,
+            compactCluster: isCluster && ClusterSidecarSizing.usesCompactLayout(available: visible.height),
             onContentHeightChange: { [weak self] height in
                 guard let self, self.transition == token, kind.fitsContentHeight else { return }
                 self.scheduleContentFit(measuredHeight: height)

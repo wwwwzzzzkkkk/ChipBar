@@ -157,7 +157,13 @@ struct ClusterSidecarSizingTests {
     }
 
     @Test func shortDisplaysCapToVisibleHeightAndRequireInternalScroll() {
-        #expect(ClusterSidecarSizing.windowHeight(content: 950, available: 610) == 594)
+        #expect(ClusterSidecarSizing.usesCompactLayout(available: 940))
+        #expect(!ClusterSidecarSizing.usesCompactLayout(available: 1100))
+        #expect(ClusterSidecarSizing.windowHeight(content: 1300, available: 940) == 770)
+        #expect(ClusterSidecarSizing.windowHeight(content: 340, available: 940) == 340)
+        #expect(ClusterSidecarSizing.windowHeight(content: 950, available: 610) == 500)
+        #expect(ClusterSidecarSizing.shouldResizeWindow(
+            from: 900, to: 770, available: 940, userDisclosurePinned: true))
         #expect(ClusterSidecarSizing.windowHeight(content: 125, available: 600) == 210)
         #expect(ClusterSidecarSizing.windowHeight(content: .infinity, available: 600) == 210)
     }
