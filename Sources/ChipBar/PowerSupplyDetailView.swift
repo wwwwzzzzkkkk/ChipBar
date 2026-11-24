@@ -409,15 +409,19 @@ struct PowerSupplyDetailView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 let flow = topology
-                let powerFlow = flow.map {
-                    PowerSankeyDiagram(flow: $0, active: active && reading.live)
-                }
+                let needsBatteryDiagnostics = reading.hasBattery && flow == nil
+                let fallback = needsBatteryDiagnostics
+                    ? PowerFlowTopology(validatedSystemOf: reading, chipWatts: sampler.chipWattsAtReading)
+                    : nil
+                let displayedFlow = flow ?? fallback
                 HStack(alignment: .firstTextBaseline) {
                     Text("功率流向").font(.caption.weight(.semibold))
                     Spacer(minLength: 8)
-                    if reading.hasBattery, let powerFlow {
-                        powerFlow.statusLabel
-                    } else if powerFlow == nil {
+                    if reading.hasBattery, let flow {
+                        PowerSankeyDiagram(flow: flow, active: active && reading.live).statusLabel
+                            .contentTransition(.opacity)
+                            .animation(active ? .easeInOut(duration: 0.18) : nil, value: flow.mode)
+                    } else if displayedFlow == nil {
                         Text("左 → 右 · 条带粗细 = 瓦数")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -425,19 +429,19 @@ struct PowerSupplyDetailView: View {
                             .minimumScaleFactor(0.75)
                     }
                 }
-                if let flow, let powerFlow {
-                    powerFlow
-                        .id(flow.mode)
-                        .animation(
-                            active && reading.live && !reduceMotion
-                                ? .spring(response: 0.36, dampingFraction: 1) : nil,
-                            value: flow)
-                } else if reading.hasBattery {
+                if let displayedFlow {
+                    PowerSankeyDiagram(flow: displayedFlow, active: active && reading.live)
+                        .animation(active && reading.live && !reduceMotion ? PowerSankeyDiagram.inputSpring : nil,
+                                   value: displayedFlow)
+                        .transition(.opacity)
+                }
+                if needsBatteryDiagnostics {
                     LaptopPowerFallbackView(
                         reading: reading,
                         chipWatts: sampler.chipWattsAtReading,
-                        active: active && reading.live)
-                } else {
+                        showsSystemFlow: fallback != nil)
+                        .transition(.opacity)
+                } else if displayedFlow == nil {
                     Text(ChipBarLocale.choose("Waiting for internal power", "等待内部功率读数"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -446,6 +450,8 @@ struct PowerSupplyDetailView: View {
             }
             .padding(12)
             .glassTile(radius: 26)
+            .animation(active ? .easeInOut(duration: reduceMotion ? 0.18 : 0.24) : nil,
+                       value: topology == nil)
 
             USBCPowerSection(snapshot: reading.usb)
             USBDeviceLinkSection(devices: reading.usb.devices)

@@ -382,18 +382,20 @@ import QuartzCore
             measuredContentHeight = min(10_000, measuredHeight)
         }
         guard let kind = openedKind, kind.fitsContentHeight, panel.isVisible else { return }
-        // Coalesce animated content changes into one native frame update.
-        // Keep navigation and Cluster task disclosures on their existing timelines.
+        // Power follows SwiftUI's measured animation; Cluster still fits
+        // after its task disclosures settle. Native navigation takes priority.
         contentFitTask?.cancel()
         let token = transition
         let remaining = max(clusterDisclosureAnimationDeadline, navigationDeadline)
             - ProcessInfo.processInfo.systemUptime
         let delayMilliseconds = remaining > 0
-            ? max(16, Int((remaining * 1000).rounded(.up)) + 16) : 75
+            ? max(16, Int((remaining * 1000).rounded(.up)) + 16) : (kind == .power ? 0 : 75)
         contentFitTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(delayMilliseconds)) }
-            catch { return }
-            guard let self, self.transition == token,
+            if delayMilliseconds > 0 {
+                do { try await Task.sleep(for: .milliseconds(delayMilliseconds)) }
+                catch { return }
+            }
+            guard !Task.isCancelled, let self, self.transition == token,
                   self.openedKind == kind, self.panel.isVisible,
                   let visible = (self.parentWindow?.screen ?? self.panel.screen)?.visibleFrame else {
                 return

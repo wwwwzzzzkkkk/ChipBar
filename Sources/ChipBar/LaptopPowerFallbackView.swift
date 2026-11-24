@@ -3,8 +3,7 @@ import SwiftUI
 struct LaptopPowerFallbackView: View {
     let reading: ChipBarPowerReading
     let chipWatts: Double?
-    let active: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let showsSystemFlow: Bool
 
     private var batteryStatus: String {
         if !reading.onAdapter {
@@ -108,10 +107,7 @@ struct LaptopPowerFallbackView: View {
                        value: chipWatts, detail: "macmon")
             }
 
-            if let flow = PowerFlowTopology(validatedSystemOf: reading, chipWatts: chipWatts) {
-                PowerSankeyDiagram(flow: flow, active: active)
-                    .animation(active && !reduceMotion
-                               ? .spring(response: 0.36, dampingFraction: 1) : nil, value: flow)
+            if showsSystemFlow {
                 Text(ChipBarLocale.choose(
                     "System-to-chip flow is independently valid.",
                     "已验证系统至芯片的功率分流。"))

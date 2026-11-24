@@ -284,6 +284,23 @@ struct PowerSupplyDetailTests {
         #expect(chart.otherTop == chart.systemTop + chart.chipHeight + LaptopSankeyGeometry.gap / 2)
     }
 
+    @Test func emergingPowerBranchesScaleTheirMinimumThicknessAndGap() {
+        let unplugged = LaptopSankeyGeometry.make(systemWatts: 22.7, chargeWatts: 0,
+                                                   assistWatts: 0, chipWatts: 5.1)
+        let beginning = LaptopSankeyGeometry.make(systemWatts: 22.7, chargeWatts: 0.02,
+                                                   assistWatts: 0, chipWatts: 5.1,
+                                                   chargePresence: 0.01)
+        #expect(beginning.chargeHeight > 0 && beginning.chargeHeight < 1)
+        #expect(beginning.contentHeight(showsSupply: true, showsBreakdown: true)
+                - unplugged.contentHeight(showsSupply: true, showsBreakdown: true) < 1)
+
+        let assistance = LaptopSankeyGeometry.make(systemWatts: 22.7, chargeWatts: 0,
+                                                    assistWatts: 0.02, chipWatts: 5.1,
+                                                    assistPresence: 0.01)
+        #expect(assistance.assistHeight > 0 && assistance.assistHeight < 1)
+        #expect(abs(assistance.systemTop - unplugged.systemTop) < 1)
+    }
+
     @Test func powerDiagramFitsVisibleBranchesWithoutRescalingThem() {
         let battery = LaptopSankeyGeometry.make(systemWatts: 22.7, chargeWatts: 0,
                                                  assistWatts: 0, chipWatts: 5.1)

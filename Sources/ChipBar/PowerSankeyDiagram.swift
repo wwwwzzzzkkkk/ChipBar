@@ -164,7 +164,8 @@ struct LaptopSankeyGeometry {
     }
 
     static func make(systemWatts: Double, chargeWatts: Double,
-                     assistWatts: Double, chipWatts: Double) -> LaptopSankeyGeometry {
+                     assistWatts: Double, chipWatts: Double,
+                     chargePresence: CGFloat = 1, assistPresence: CGFloat = 1) -> LaptopSankeyGeometry {
         let leadingWatts = max(0, systemWatts + chargeWatts - assistWatts)
         let otherWatts = max(0, systemWatts - chipWatts)
         let grossWatts = systemWatts + chargeWatts
@@ -172,9 +173,9 @@ struct LaptopSankeyGeometry {
         let chipMinimum = chipWatts > 0 ? minimumRibbonHeight : 0
         let otherMinimum = otherWatts > 0 ? minimumRibbonHeight : 0
         let systemMinimum = chipMinimum + otherMinimum
-        let chargeMinimum = chargeWatts > 0 ? minimumRibbonHeight : 0
+        let chargeMinimum = chargeWatts > 0 ? minimumRibbonHeight * chargePresence : 0
         let inputMinimum = leadingWatts > 0 ? minimumRibbonHeight : 0
-        let assistMinimum = assistWatts > 0 ? minimumRibbonHeight : 0
+        let assistMinimum = assistWatts > 0 ? minimumRibbonHeight * assistPresence : 0
 
         let total = max(CGFloat(grossWatts) * s, systemMinimum + chargeMinimum, inputMinimum + assistMinimum)
         // Borrow display width from the adjacent branch at each junction.
@@ -183,7 +184,8 @@ struct LaptopSankeyGeometry {
             ? min(max(CGFloat(systemWatts) * s, systemMinimum), total - chargeMinimum) : total
         let chargeH = total - systemH
         let inputH = assistWatts > 0
-            ? (leadingWatts > 0 ? min(max(CGFloat(leadingWatts) * s, inputMinimum), total - assistMinimum) : 0)
+            ? max(chargeH, leadingWatts > 0
+                    ? min(max(CGFloat(leadingWatts) * s, inputMinimum), total - assistMinimum) : 0)
             : total
         let assistH = total - inputH
         let chipH = otherWatts > 0
@@ -191,7 +193,7 @@ struct LaptopSankeyGeometry {
         let otherH = systemH - chipH
         // Place the merged flow between the two input lanes.
         let top = verticalInset
-        let inputGap = inputH > 0 && assistH > 0 ? gap : 0
+        let inputGap = inputH > 0 && assistH > 0 ? gap * assistPresence : 0
         let systemTop = top + inputGap / 2
         // Open the outlet gap equally above and below the system split.
         let outputGap = chipH > 0 && otherH > 0 ? gap : 0
@@ -204,7 +206,7 @@ struct LaptopSankeyGeometry {
             assistHeight: assistH,
             systemTop: systemTop,
             systemHeight: systemH,
-            chargeTop: systemTop + systemH + (chargeH > 0 ? gap : 0),
+            chargeTop: systemTop + systemH + (chargeH > 0 ? gap * chargePresence : 0),
             chargeHeight: chargeH,
             chipTop: rightTop,
             chipHeight: chipH,
@@ -215,7 +217,10 @@ struct LaptopSankeyGeometry {
 }
 
 struct PowerSankeyDiagram: View, Animatable {
-    typealias ChartWatts = AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>>
+    static let inputSpring = Animation.spring(response: 0.52, dampingFraction: 1)
+
+    typealias Pair = AnimatablePair<Double, Double>
+    typealias ChartWatts = AnimatablePair<AnimatablePair<Pair, Pair>, AnimatablePair<Pair, Double>>
     let flow: PowerFlowTopology
     let active: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -226,8 +231,9 @@ struct PowerSankeyDiagram: View, Animatable {
         self.flow = flow
         self.active = active
         animatableData = ChartWatts(
-            AnimatablePair(flow.systemWatts, flow.chargeWatts),
-            AnimatablePair(flow.assistWatts, flow.chipWatts))
+            AnimatablePair(Pair(flow.systemWatts, flow.chargeWatts), Pair(flow.assistWatts, flow.chipWatts)),
+            AnimatablePair(Pair(flow.chargeWatts > 0 ? 1 : 0, flow.assistWatts > 0 ? 1 : 0),
+                           flow.showsSupply ? 1 : 0))
     }
 
     private func watts(_ n: Double) -> String { String(format: "%.1f", n) }
@@ -274,13 +280,13 @@ struct PowerSankeyDiagram: View, Animatable {
         let endpointWidth: CGFloat
         let systemWidth: CGFloat
 
-        init(width: CGFloat, hasInputs: Bool) {
+        init(width: CGFloat, supplyPresence: CGFloat) {
             let gap = min(LaptopFlowStyle.nodeGap, width * 0.015)
             endpointWidth = width * 0.132
-            systemWidth = width * (hasInputs ? 0.18 : 0.28)
+            systemWidth = width * (0.28 - 0.10 * supplyPresence)
             source = endpointWidth / 2
             inlet = endpointWidth + gap
-            system = hasInputs ? width / 2 : systemWidth / 2
+            system = systemWidth / 2 + (width - systemWidth) / 2 * supplyPresence
             merge = system - systemWidth / 2 - gap
             split = system + systemWidth / 2 + gap
             outlet = width - inlet
@@ -300,15 +306,18 @@ struct PowerSankeyDiagram: View, Animatable {
                           inputTotal: Double? = nil) -> some View {
         VStack(spacing: 4) {
             Image(systemName: symbol)
+                .contentTransition(.opacity)
                 .font(.system(size: height < 32 ? 11 : 15, weight: .medium))
             if let inputTotal {
                 wattLabel(inputTotal, size: 9)
                     .accessibilityLabel(title + ", " + watts(inputTotal) + " W")
+                    .transition(.opacity)
             } else if height >= 48 {
                 Text(title)
                     .font(.system(size: 8, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
+                    .transition(.opacity)
             }
         }
         .foregroundStyle(.secondary)
@@ -361,13 +370,14 @@ struct PowerSankeyDiagram: View, Animatable {
 
     private func ribbon(from x0: CGFloat, to x1: CGFloat, at y0: CGFloat, to y1: CGFloat,
                         height: CGFloat, start: CGFloat, end: CGFloat,
-                        joinedAtStart: RibbonEdge? = nil, joinedAtEnd: RibbonEdge? = nil) -> Path {
+                        joinedAtStart: RibbonEdge? = nil, joinedAtEnd: RibbonEdge? = nil,
+                        startJoin: CGFloat = 1, endJoin: CGFloat = 1) -> Path {
         let span = x1 - x0
         let radius = LaptopFlowStyle.cornerRadius(width: span, height: height)
-        let topLeft = joinedAtStart == .top ? 0 : radius
-        let topRight = joinedAtEnd == .top ? 0 : radius
-        let bottomLeft = joinedAtStart == .bottom ? 0 : radius
-        let bottomRight = joinedAtEnd == .bottom ? 0 : radius
+        let topLeft = radius * (1 - (joinedAtStart == .top ? startJoin : 0))
+        let topRight = radius * (1 - (joinedAtEnd == .top ? endJoin : 0))
+        let bottomLeft = radius * (1 - (joinedAtStart == .bottom ? startJoin : 0))
+        let bottomRight = radius * (1 - (joinedAtEnd == .bottom ? endJoin : 0))
         let bottom0 = y0 + height
         let bottom1 = y1 + height
 
@@ -424,19 +434,24 @@ struct PowerSankeyDiagram: View, Animatable {
     }
 
     private var flowGraph: some View {
-        let system = animatableData.first.first
-        let charge = animatableData.first.second
-        let assist = animatableData.second.first
-        let chip = animatableData.second.second
+        let system = max(0, animatableData.first.first.first)
+        let charge = max(0, animatableData.first.first.second)
+        let assist = max(0, animatableData.first.second.first)
+        let chip = min(system, max(0, animatableData.first.second.second))
+        let chargePresence = CGFloat(min(1, max(0, animatableData.second.first.first)))
+        let assistPresence = CGFloat(min(1, max(0, animatableData.second.first.second)))
+        let supplyPresence = CGFloat(min(1, max(0, animatableData.second.second)))
         let geometry = LaptopSankeyGeometry.make(
-            systemWatts: system, chargeWatts: charge, assistWatts: assist, chipWatts: chip)
-        let hasInputs = flow.showsSupply
+            systemWatts: system, chargeWatts: charge, assistWatts: assist, chipWatts: chip,
+            chargePresence: chargePresence, assistPresence: assistPresence)
+        let hasInputs = supplyPresence > 0
 
         return GeometryReader { proxy in
-            let columns = Columns(width: proxy.size.width, hasInputs: hasInputs)
+            let columns = Columns(width: proxy.size.width, supplyPresence: supplyPresence)
             let inputX = (columns.inlet + columns.merge) / 2
             let outputX = (columns.split + columns.outlet) / 2
-            let inputBottom = geometry.leftTop + geometry.systemHeight
+            let primaryHeight = max(0, geometry.inputHeight - geometry.chargeHeight)
+            let inputBottom = geometry.leftTop + primaryHeight
             let inputTarget = geometry.systemTop + geometry.assistHeight
             let inputY = geometry.leftTop + geometry.inputHeight / 2
             let systemY = geometry.systemTop + geometry.systemHeight / 2
@@ -444,8 +459,13 @@ struct PowerSankeyDiagram: View, Animatable {
             let assistY = geometry.assistTop + geometry.assistHeight / 2
             let outputBoundary = geometry.systemTop + geometry.chipHeight
 
-            let supply = hasInputs
-                ? supplyPaths(geometry, columns: columns, inputBottom: inputBottom, inputTarget: inputTarget)
+            let showSupply = hasInputs && columns.merge > columns.inlet
+            let curveStart = LaptopFlowStyle.splitStart * chargePresence
+            let curveEnd = LaptopFlowStyle.mergeEnd + (1 - LaptopFlowStyle.mergeEnd) * chargePresence
+            let supply = showSupply
+                ? supplyPaths(geometry, columns: columns, inputBottom: inputBottom, inputTarget: inputTarget,
+                              primaryHeight: primaryHeight, curveStart: curveStart, curveEnd: curveEnd,
+                              chargePresence: chargePresence, assistPresence: assistPresence)
                 : Path()
             let outputs = flow.hasBreakdown ? outputPaths(geometry, columns: columns, boundary: outputBoundary) : Path()
             let sourceSymbol = flow.mode == .battery ? "battery.75percent" : "powerplug"
@@ -454,10 +474,11 @@ struct PowerSankeyDiagram: View, Animatable {
             let otherTitle = flow.mode == .desktop ? ChipBarLocale.choose("Other", "其余部件")
                                                    : ChipBarLocale.choose("Other", "其他")
 
-            if hasInputs {
+            if showSupply {
                 glassRibbons(LaptopPowerGlassShape(ribbons: supply),
                              from: LaptopFlowStyle.inputStartColor, to: LaptopFlowStyle.inputEndColor,
                              x0: columns.inlet, x1: columns.merge, width: proxy.size.width)
+                    .opacity(supplyPresence)
             }
 
             if flow.hasBreakdown {
@@ -470,40 +491,44 @@ struct PowerSankeyDiagram: View, Animatable {
                 PowerRibbonGlint(supply: supply, outputs: outputs)
             }
 
-            if geometry.assistHeight > 0 {
+            if showSupply && geometry.assistHeight > 0 {
                 endpoint(batteryTitle, symbol: "battery.75percent",
                          height: geometry.assistHeight, width: columns.endpointWidth)
                     .position(x: columns.source, y: assistY)
+                    .opacity(assistPresence * supplyPresence)
                 wattLabel(assist)
                     .accessibilityLabel(batteryTitle + ", " + watts(assist) + " W")
                     .position(x: inputX, y: assistY + (geometry.systemTop - geometry.assistTop) * LaptopFlowStyle.mergeMidpoint)
+                    .opacity(assistPresence * supplyPresence)
             }
-            if hasInputs && geometry.inputHeight > 0 {
+            if showSupply && geometry.inputHeight > 0 {
                 endpoint(sourceName, symbol: sourceSymbol, height: geometry.inputHeight,
-                         width: columns.endpointWidth, inputTotal: charge > 0 ? system + charge : nil)
+                         width: columns.endpointWidth, inputTotal: flow.chargeWatts > 0 ? system + charge : nil)
                     .position(x: columns.source, y: inputY)
-                if geometry.chargeHeight == 0 {
-                    let value = max(0, system - assist)
-                    wattLabel(value)
-                        .accessibilityLabel(sourceName + ", " + watts(value) + " W")
-                        .position(x: inputX, y: inputY + (inputTarget - geometry.leftTop) * LaptopFlowStyle.mergeMidpoint)
-                }
+                    .opacity(supplyPresence)
+                let value = max(0, system - assist)
+                let midpoint = LaptopFlowStyle.mergeMidpoint
+                    + (LaptopFlowStyle.splitMidpoint - LaptopFlowStyle.mergeMidpoint) * chargePresence
+                let title = flow.chargeWatts > 0 ? ChipBarLocale.choose("System power", "系统功率") : sourceName
+                wattLabel(value)
+                    .accessibilityLabel(title + ", " + watts(value) + " W")
+                    .position(x: inputX, y: geometry.leftTop + primaryHeight / 2
+                              + (inputTarget - geometry.leftTop) * midpoint)
+                    .opacity(supplyPresence)
             }
 
             systemCard(system, height: geometry.systemHeight, width: columns.systemWidth)
                 .position(x: columns.system, y: systemY)
-            if geometry.chargeHeight > 0 {
-                wattLabel(system)
-                    .accessibilityLabel(ChipBarLocale.choose("System power", "系统功率") + ", " + watts(system) + " W")
-                    .position(x: inputX, y: geometry.leftTop + geometry.systemHeight / 2
-                              + (geometry.systemTop - geometry.leftTop) * LaptopFlowStyle.splitMidpoint)
+            if showSupply && geometry.chargeHeight > 0 {
                 wattLabel(charge)
                     .accessibilityLabel(ChipBarLocale.choose("Battery charging", "电池充电") + ", " + watts(charge) + " W")
                     .position(x: inputX, y: inputBottom + geometry.chargeHeight / 2
                               + (geometry.chargeTop - inputBottom) * LaptopFlowStyle.splitMidpoint)
+                    .opacity(chargePresence * supplyPresence)
                 endpoint(ChipBarLocale.choose("Charging", "充电"), symbol: "battery.100percent.bolt",
                          height: geometry.chargeHeight, width: columns.systemWidth)
                     .position(x: columns.system, y: chargeY)
+                    .opacity(chargePresence * supplyPresence)
             }
 
             if flow.hasBreakdown {
@@ -538,25 +563,26 @@ struct PowerSankeyDiagram: View, Animatable {
     }
 
     private func supplyPaths(_ g: LaptopSankeyGeometry, columns: Columns,
-                             inputBottom: CGFloat, inputTarget: CGFloat) -> Path {
+                             inputBottom: CGFloat, inputTarget: CGFloat, primaryHeight: CGFloat,
+                             curveStart: CGFloat, curveEnd: CGFloat,
+                             chargePresence: CGFloat, assistPresence: CGFloat) -> Path {
         var result = Path()
-        let charging = g.chargeHeight > 0
-        if g.inputHeight > 0 {
+        if primaryHeight > 0 {
             result.addPath(ribbon(from: columns.inlet, to: columns.merge, at: g.leftTop,
-                to: inputTarget, height: charging ? g.systemHeight : g.inputHeight,
-                start: charging ? LaptopFlowStyle.splitStart : 0,
-                end: charging ? 1 : LaptopFlowStyle.mergeEnd,
-                joinedAtStart: charging ? .bottom : nil,
-                joinedAtEnd: g.assistHeight > 0 ? .top : nil))
+                to: inputTarget, height: primaryHeight, start: curveStart, end: curveEnd,
+                joinedAtStart: .bottom, joinedAtEnd: .top,
+                startJoin: chargePresence, endJoin: assistPresence))
         }
-        if charging {
+        // Liquid Glass can highlight a subpixel outline as a bright line.
+        if g.chargeHeight >= 0.75 {
             result.addPath(ribbon(from: columns.inlet, to: columns.merge, at: inputBottom,
                 to: g.chargeTop, height: g.chargeHeight, start: LaptopFlowStyle.splitStart, end: 1,
-                joinedAtStart: .top))
-        } else if g.assistHeight > 0 {
+                joinedAtStart: .top, startJoin: chargePresence))
+        }
+        if g.assistHeight >= 0.75 {
             result.addPath(ribbon(from: columns.inlet, to: columns.merge, at: g.assistTop,
                 to: g.systemTop, height: g.assistHeight, start: 0, end: LaptopFlowStyle.mergeEnd,
-                joinedAtEnd: g.inputHeight > 0 ? .bottom : nil))
+                joinedAtEnd: primaryHeight > 0 ? .bottom : nil, endJoin: assistPresence))
         }
         return result
     }
@@ -586,7 +612,8 @@ struct PowerSankeyDiagram: View, Animatable {
                 flowGraph
             }
         }
-        .animation(active && reduceMotion ? LaptopFlowStyle.crossfade : nil, value: reduceMotion ? flow : nil)
+        .animation(active && reduceMotion ? LaptopFlowStyle.crossfade : nil,
+                   value: reduceMotion ? flow : nil)
         .accessibilityElement(children: .contain)
     }
 }
