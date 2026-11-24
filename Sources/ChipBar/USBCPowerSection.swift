@@ -68,8 +68,7 @@ struct USBCPowerSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(active.indices, id: \.self) { index in
-                let port = active[index]
+            ForEach(Array(active.enumerated()), id: \.element.id) { index, port in
                 USBCPortRow(port: port, tint: USBCFormat.tint(index),
                             devices: snapshot.devices.filter { $0.portID == port.id })
             }

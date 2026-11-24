@@ -57,6 +57,13 @@ enum SidePanelPlacement {
         var needsHorizontalScroll: Bool { frame.width + 1 < documentWidth }
     }
 
+    /// A power sidecar can add rows only in the space below its top edge.
+    /// Additional content belongs in the scroll document.
+    static func powerViewportHeight(content: CGFloat, anchoredTop: CGFloat, visible: CGRect) -> CGFloat {
+        let top = min(anchoredTop, visible.maxY - edgeInset)
+        return min(content, max(1, top - visible.minY - edgeInset))
+    }
+
     static func choose(parent: CGRect, visible: CGRect, preferredWidth: CGFloat,
                        preferredHeight: CGFloat, top: CGFloat? = nil) -> Result? {
         let bounds = visible.insetBy(dx: edgeInset, dy: edgeInset)

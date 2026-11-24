@@ -290,13 +290,20 @@ import QuartzCore
         } else {
             desiredHeight = SidePanelLayout.height(for: kind)
         }
-        let preferredHeight = isCluster
-            ? ClusterSidecarSizing.windowHeight(content: desiredHeight, available: visible.height)
-            : desiredHeight
+        let requestedTop = switchingInPlace ? panel.frame.maxY : parent.frame.maxY
+        let preferredHeight: CGFloat
+        switch kind {
+        case .cluster:
+            preferredHeight = ClusterSidecarSizing.windowHeight(content: desiredHeight, available: visible.height)
+        case .power:
+            preferredHeight = SidePanelPlacement.powerViewportHeight(
+                content: desiredHeight, anchoredTop: requestedTop, visible: visible)
+        default:
+            preferredHeight = desiredHeight
+        }
         guard let placement = SidePanelPlacement.choose(
             parent: parent.frame, visible: visible, preferredWidth: width,
-            preferredHeight: preferredHeight,
-            top: switchingInPlace ? panel.frame.maxY : parent.frame.maxY) else { return }
+            preferredHeight: preferredHeight, top: requestedTop) else { return }
         let target = placement.frame
         let height = target.height
         let documentSize = NSSize(width: width, height: max(desiredHeight, height))
@@ -413,9 +420,12 @@ import QuartzCore
                 ? min(10_000, ceil(natural)) : SidePanelLayout.height(for: kind)
             let old = self.panel.frame
             let isCluster = kind == .cluster
+            let top = ClusterSidecarSizing.stableTop(
+                openedAt: self.contentAnchoredTop ?? old.maxY,
+                visibleMaxY: visible.maxY)
             let proposed = isCluster
                 ? ClusterSidecarSizing.windowHeight(content: content, available: visible.height)
-                : min(content, max(1, visible.height - SidePanelPlacement.edgeInset * 2))
+                : SidePanelPlacement.powerViewportHeight(content: content, anchoredTop: top, visible: visible)
             let resizeWindow = isCluster
                 ? ClusterSidecarSizing.shouldResizeWindow(
                     from: old.height, to: proposed, available: visible.height,
@@ -435,9 +445,6 @@ import QuartzCore
                 self.scrollView.hasVerticalScroller = needsScroll
             }
             if resizeWindow {
-                let top = ClusterSidecarSizing.stableTop(
-                    openedAt: self.contentAnchoredTop ?? old.maxY,
-                    visibleMaxY: visible.maxY)
                 let y = ClusterSidecarSizing.bottomY(
                     anchoredTop: top, height: height, visibleMinY: visible.minY)
                 let frame = NSRect(x: old.minX, y: y, width: old.width, height: height)

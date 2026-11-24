@@ -162,6 +162,20 @@ struct ClusterSidecarSizingTests {
         #expect(ClusterSidecarSizing.windowHeight(content: .infinity, available: 600) == 210)
     }
 
+    @Test func powerDisclosureUsesOnlySpaceBelowItsAnchor() throws {
+        let screen = CGRect(x: 0, y: 24, width: 1440, height: 880)
+        let parent = CGRect(x: 500, y: 200, width: 378, height: 520)
+        let top = parent.maxY
+        let compact = SidePanelPlacement.powerViewportHeight(content: 440, anchoredTop: top, visible: screen)
+        let expanded = SidePanelPlacement.powerViewportHeight(content: 910, anchoredTop: top, visible: screen)
+        #expect(compact == 440)
+        #expect(expanded == top - screen.minY - SidePanelPlacement.edgeInset)
+        let placement = try #require(SidePanelPlacement.choose(
+            parent: parent, visible: screen, preferredWidth: 420, preferredHeight: expanded, top: top))
+        #expect(placement.frame.maxY == top)
+        #expect(placement.frame.minY == screen.minY + SidePanelPlacement.edgeInset)
+    }
+
     @Test func panelKeepsTopAnchorUntilReachingScreenBottom() {
         #expect(ClusterSidecarSizing.bottomY(
             anchoredTop: 980, height: 620, visibleMinY: 24) == 360)
