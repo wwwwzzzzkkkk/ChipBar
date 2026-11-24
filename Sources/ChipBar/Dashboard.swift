@@ -1,12 +1,25 @@
 import SwiftUI
+import CoreGraphics
 import QuartzCore
 import ChipBarCore
 
 enum DashboardLayout {
     static let width: CGFloat = 378
 
-    static func usesCompactHome(visibleHeight: CGFloat) -> Bool {
-        visibleHeight.isFinite && visibleHeight > 0 && visibleHeight <= 960
+    @MainActor static func usesCompactHome(on screen: NSScreen) -> Bool {
+        let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        let millimeters = displayID.map { CGDisplayScreenSize($0.uint32Value) }
+        return usesCompactHome(sizeInMillimeters: millimeters, visibleHeight: screen.visibleFrame.height)
+    }
+
+    static func usesCompactHome(sizeInMillimeters: CGSize?, visibleHeight: CGFloat) -> Bool {
+        if let size = sizeInMillimeters, size.width.isFinite, size.height.isFinite,
+           size.width > 0, size.height > 0 {
+            // Apple's 14-inch panel is nominally 14.2 inches. Allow for
+            // millimeter rounding without including the 15-inch class.
+            return hypot(size.width, size.height) <= 14.5 * 25.4
+        }
+        return visibleHeight.isFinite && visibleHeight > 0 && visibleHeight <= 960
     }
 
     static func viewportLimit(availableHeight: CGFloat, compact: Bool) -> CGFloat {

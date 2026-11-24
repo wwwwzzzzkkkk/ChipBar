@@ -6,8 +6,18 @@ import ChipBarCore
 
 @MainActor struct DashboardOpeningStateTests {
     @Test func compactHomeUsesDisplaySpaceWithoutChangingSavedTileOrder() {
-        #expect(DashboardLayout.usesCompactHome(visibleHeight: 940))
-        #expect(!DashboardLayout.usesCompactHome(visibleHeight: 1100))
+        #expect(DashboardLayout.usesCompactHome(
+            sizeInMillimeters: CGSize(width: 301, height: 195), visibleHeight: 1150))
+        #expect(DashboardLayout.usesCompactHome(
+            sizeInMillimeters: CGSize(width: 285, height: 178), visibleHeight: 780))
+        #expect(!DashboardLayout.usesCompactHome(
+            sizeInMillimeters: CGSize(width: 326, height: 211), visibleHeight: 900))
+        #expect(!DashboardLayout.usesCompactHome(
+            sizeInMillimeters: CGSize(width: 349, height: 226), visibleHeight: 850))
+        #expect(!DashboardLayout.usesCompactHome(
+            sizeInMillimeters: CGSize(width: 598, height: 340), visibleHeight: 750))
+        #expect(DashboardLayout.usesCompactHome(sizeInMillimeters: nil, visibleHeight: 940))
+        #expect(!DashboardLayout.usesCompactHome(sizeInMillimeters: .zero, visibleHeight: 1100))
         #expect(DashboardLayout.viewportLimit(availableHeight: 920, compact: true) == 828)
         #expect(DashboardLayout.viewportLimit(availableHeight: 1100, compact: false) == 1100)
         #expect(DashboardLayout.columns(for: .applications, compact: true) == 3)

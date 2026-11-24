@@ -487,7 +487,7 @@ enum DashboardViewportHeight {
                                             object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.panelRequestedVisible, let (rect, screen) = self.anchor() else { return }
-                self.updateViewport(anchor: rect, visible: screen.visibleFrame)
+                self.updateViewport(anchor: rect, screen: screen)
                 self.refresh(forceLayout: true)
             }
         })
@@ -586,8 +586,9 @@ enum DashboardViewportHeight {
         return (window.convertToScreen(button.convert(button.bounds, to: nil)), screen)
     }
 
-    private func updateViewport(anchor: NSRect, visible: NSRect) {
-        let compact = DashboardLayout.usesCompactHome(visibleHeight: visible.height)
+    private func updateViewport(anchor: NSRect, screen: NSScreen) {
+        let visible = screen.visibleFrame
+        let compact = DashboardLayout.usesCompactHome(on: screen)
         let available = min(anchor.minY - 6, visible.maxY - 6) - visible.minY - 8
         maximumHeight = DashboardLayout.viewportLimit(availableHeight: available, compact: compact)
         if dashboardState.compactHome != compact {
@@ -679,7 +680,7 @@ enum DashboardViewportHeight {
         autoDismissal?.cancel(); autoDismissal = nil
         if !shouldOpen { hidePanel(); return }
         guard let (rect, screen) = anchor() else { return }
-        updateViewport(anchor: rect, visible: screen.visibleFrame)
+        updateViewport(anchor: rect, screen: screen)
         synchronizeAppearanceForOpen()
         // Restore the initial dashboard on EVERY opening, including a rapid
         // close -> reopen while the NSPanel fade-out is still in progress.
