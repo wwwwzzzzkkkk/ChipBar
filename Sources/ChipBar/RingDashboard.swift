@@ -15,6 +15,9 @@ struct DashboardRunway: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.compactDashboard) private var compact
 
+    private var diameter: CGFloat { compact ? 58 : 65 }
+    private var letterSpacing: CGFloat { compact ? 0.2 : 0 }
+
     private var fraction: Double {
         guard let percentage, percentage.isFinite else { return 0 }
         return max(0, min(1, percentage / 100))
@@ -24,9 +27,10 @@ struct DashboardRunway: View {
         VStack(spacing: 0) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .tracking(letterSpacing)
                 .foregroundStyle(.primary)
                 .frame(height: compact ? 16 : 20)
-                .padding(.bottom, compact ? 3 : 4)
+                .padding(.bottom, 4)
             ZStack {
                 Circle()
                     .stroke(.quaternary, lineWidth: 6)
@@ -37,7 +41,7 @@ struct DashboardRunway: View {
                     .animation(reduceMotion || !active ? nil :
                         .spring(response: 0.55, dampingFraction: 1), value: fraction)
                 if percentage?.isFinite == true {
-                    RunwayPercentage(value: fraction * 100)
+                    RunwayPercentage(value: fraction * 100, letterSpacing: letterSpacing)
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                 } else {
@@ -45,11 +49,12 @@ struct DashboardRunway: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: compact ? 51 : 65, height: compact ? 51 : 65)
-            .padding(.bottom, compact ? 5 : 10)
+            .frame(width: diameter, height: diameter)
+            .padding(.bottom, compact ? 6 : 10)
             .accessibilityHidden(true)
             Text(subtitle)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .tracking(letterSpacing)
                 .foregroundStyle(.primary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -57,6 +62,7 @@ struct DashboardRunway: View {
                 .frame(height: 18)
             Text(detail)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
+                .tracking(letterSpacing)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -75,6 +81,7 @@ struct DashboardRunway: View {
 
 private struct RunwayPercentage: View, Animatable {
     var value: Double
+    let letterSpacing: CGFloat
 
     var animatableData: Double {
         get { value }
@@ -82,7 +89,7 @@ private struct RunwayPercentage: View, Animatable {
     }
 
     var body: some View {
-        Text(String(format: "%.0f%%", value))
+        Text(String(format: "%.0f%%", value)).tracking(letterSpacing)
     }
 }
 

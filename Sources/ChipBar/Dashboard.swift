@@ -27,7 +27,7 @@ enum DashboardLayout {
     }
 
     static func tileCornerRadius(_ radius: CGFloat, compact: Bool) -> CGFloat {
-        compact ? min(radius, 17) : radius
+        compact ? min(radius, 19) : radius
     }
 }
 
