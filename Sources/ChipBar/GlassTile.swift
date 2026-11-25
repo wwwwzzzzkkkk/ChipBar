@@ -7,7 +7,6 @@ struct GlassTileModifier: ViewModifier {
     let radius: CGFloat
     let tint: Color?
     let interactive: Bool
-    let subdued: Bool
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.compactDashboard) private var compact
@@ -22,10 +21,6 @@ struct GlassTileModifier: ViewModifier {
             content
                 .background(Color(nsColor: .windowBackgroundColor), in: shape)
                 .overlay { shape.strokeBorder(.primary.opacity(0.14), lineWidth: 1) }
-        } else if subdued {
-            content
-                .background(Color.primary.opacity(0.06), in: shape)
-                .overlay { shape.strokeBorder(Color.primary.opacity(0.07), lineWidth: 1) }
         } else if #available(macOS 26.0, *) {
             content.glassEffect(
                 .regular.tint(tint).interactive(interactive),
@@ -52,9 +47,8 @@ struct GlassTileModifier: ViewModifier {
 extension View {
     func glassTile(radius: CGFloat = 26,
                    tint: Color? = nil,
-                   interactive: Bool = false,
-                   subdued: Bool = false) -> some View {
-        modifier(GlassTileModifier(radius: radius, tint: tint, interactive: interactive, subdued: subdued))
+                   interactive: Bool = false) -> some View {
+        modifier(GlassTileModifier(radius: radius, tint: tint, interactive: interactive))
     }
 }
 

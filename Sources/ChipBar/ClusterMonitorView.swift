@@ -329,7 +329,7 @@ struct ClusterMonitorPanel: View {
                             .font(.caption2.weight(.medium))
                             .rotationEffect(.degrees(expanded ? 180 : 0))
                             .animation(reduceMotion ? nil :
-                                .easeInOut(duration: SidePanelLayout.clusterDisclosureAnimationDuration),
+                                SidePanelNavigationMotion.animation(opening: expanded),
                                 value: expanded)
                             .foregroundStyle(.secondary)
                     }
@@ -350,7 +350,7 @@ struct ClusterMonitorPanel: View {
                 }
                 .animation(
                     reduceMotion ? nil :
-                        .easeInOut(duration: SidePanelLayout.clusterDisclosureAnimationDuration),
+                        SidePanelNavigationMotion.animation(opening: expanded),
                     value: expanded
                 )
                 .clipped()

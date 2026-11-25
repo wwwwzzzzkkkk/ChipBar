@@ -299,7 +299,8 @@ private struct USBDisclosureDetails<Content: View>: View {
         .clipped()
         .allowsHitTesting(expanded)
         .accessibilityHidden(!expanded)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: expanded)
+        .animation(reduceMotion ? nil : SidePanelNavigationMotion.animation(opening: expanded),
+                   value: expanded)
     }
 }
 

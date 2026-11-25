@@ -311,7 +311,6 @@ struct Dashboard: View {
                 color: MemoryPressureRingStyle.tint(for: monitor.memoryPressure),
                 subtitle: memoryUsedSummary, detail: memoryTotalSummary,
                 pressureStatus: monitor.memoryPressure.title,
-                capacityReadout: memoryCapacityReadout,
                 active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping)
         case .cpuCores:
             CPUCoreUsageSection(samplingInterval: monitor.interval,
@@ -407,11 +406,6 @@ struct Dashboard: View {
         return ChipBarLocale.format("Total %.1f GB", "共 %.1f GB", memory.totalGiB)
     }
 
-    private var memoryCapacityReadout: String {
-        guard monitor.connected, let memory = monitor.sample?.memory else { return "— / — GB" }
-        return String(format: "%.1f / %.1f GB", memory.usedGiB, memory.totalGiB)
-    }
-
     /// One and only one power history chart: the headline and real rolling
     /// 10-minute graph form the dashboard's single information focal point.
     // The heading and plot share a fixed height for each density so
@@ -503,7 +497,6 @@ struct Dashboard: View {
                 subtitle: memoryUsedSummary,
                 detail: memoryTotalSummary,
                 pressureStatus: monitor.memoryPressure.title,
-                capacityReadout: memoryCapacityReadout,
                 active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping)
         }
     }
@@ -558,7 +551,7 @@ struct Dashboard: View {
     }
 
     private func temperatureSummary(_ temperature: Double?) -> String {
-        guard let temperature, temperature.isFinite else { return "— °C" }
+        guard let temperature, temperature.isFinite else { return "温度不可用" }
         return String(format: "%.1f°C", temperature)
     }
 

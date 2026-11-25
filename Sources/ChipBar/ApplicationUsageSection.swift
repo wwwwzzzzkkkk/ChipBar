@@ -24,24 +24,20 @@ struct ApplicationUsageSection: View {
                 }
             }
             ApplicationMetricSelector(selection: $state.applicationMetric)
-            // Changing metrics creates a separate view identity: the old
-            // metric keeps its own numbers as it recedes behind the new page.
-            // Incoming rankings float DOWN from above, not up from below.
-            // The viewport never changes height while switching resources.
+            // Keep the ranking viewport and selector anchored while
+            // replacing the displayed metric.
             ZStack(alignment: .topLeading) {
                 ranking(for: state.applicationMetric)
                     .id(state.applicationMetric)
                     .transition(reduceMotion ? .opacity :
                         .asymmetric(
                             insertion: .opacity
-                                .combined(with: .offset(y: -14))
-                                .combined(with: .scale(scale: 1.015, anchor: .top)),
-                            removal: .opacity
-                                .combined(with: .scale(scale: 0.94, anchor: .center))))
+                                .combined(with: .offset(y: -8)),
+                            removal: .opacity))
             }
             .frame(height: 84 + 56 * state.applicationsExpansion, alignment: .topLeading)
             .clipped()
-            .animation(ChipBarMotion.optional(ChipBarMotion.resourceStack,
+            .animation(ChipBarMotion.optional(SidePanelNavigationMotion.animation(opening: true),
                                               reduceMotion: reduceMotion), value: state.applicationMetric)
             // Keep the ranking scannable. Advanced measurement caveats
             // remain available on hover and to assistive technologies.

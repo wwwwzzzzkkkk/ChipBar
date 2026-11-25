@@ -11,9 +11,6 @@ enum ChipBarMotion {
     static let selection = Animation.spring(response: 0.30, dampingFraction: 1.0)
     // Slightly elastic liquid capsule, only driven by deliberate selection taps.
     static let liquidSelection = Animation.spring(response: 0.48, dampingFraction: 0.78)
-    // Layered application resource switch: the old list recedes and fades,
-    // while the next metric enters above it. Keep this under one-third second.
-    static let resourceStack = Animation.easeInOut(duration: 0.28)
     static let navigation = Animation.easeInOut(duration: 0.24)
 
     static func optional(_ animation: Animation, reduceMotion: Bool) -> Animation? {

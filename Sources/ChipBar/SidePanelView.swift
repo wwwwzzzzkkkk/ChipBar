@@ -22,7 +22,7 @@ enum SidePanelLayout {
     static let powerHeight: CGFloat = 360
     static let diskHeight: CGFloat = 334
     static let clusterHeight: CGFloat = 310
-    static let clusterDisclosureAnimationDuration = 0.24
+    static let clusterDisclosureAnimationDuration = SidePanelNavigationMotion.enterDuration
 
     static func width(for kind: DashboardSidePanelKind?) -> CGFloat {
         kind == .power ? powerWidth : kind == .cluster ? 378 : width
@@ -125,15 +125,10 @@ enum SidePanelOpeningPolicy {
     }
 }
 
-/// Direction follows the default dashboard navigation order. One short
-/// content transition, never a transition on the translucent NSPanel.
+/// Shared timing and fixed seam for every sidecar.
 enum SidePanelNavigationMotion {
-    static let duration: TimeInterval = 0.32
-    static let enterDuration: TimeInterval = 0.26
-    static let relocationDuration: TimeInterval = 0.18
-    static let enterDistance: CGFloat = 22
-    static let relocationDistance: CGFloat = 32
-    static let exitOpacity: Float = 0.12
+    static let enterDuration: TimeInterval = 0.27
+    static let exitDuration: TimeInterval = 0.235
 
     /// One native frame commit is enough: the render server owns every
     /// intermediate content frame, including on high-refresh displays.
@@ -141,29 +136,26 @@ enum SidePanelNavigationMotion {
         current != target
     }
 
-    static func edgeOffset(on side: SidePanelPlacement.Side,
-                           relocating: Bool = false) -> CGFloat {
-        let distance = relocating ? relocationDistance : enterDistance
-        return side == .right ? -distance : distance
+    static func seamAnchor(on side: SidePanelPlacement.Side) -> CGFloat {
+        side == .right ? 0 : 1
     }
 
-    static func tile(_ kind: DashboardSidePanelKind) -> DashboardTile {
-        switch kind {
-        case .externalDisk: return .storage
-        case .power: return .powerSupply
-        case .applications: return .applications
-        case .cluster: return .cluster
-        }
+    static func edgeOffset(on side: SidePanelPlacement.Side) -> CGFloat {
+        side == .right ? -8 : 8
     }
 
-    static func forward(from old: DashboardSidePanelKind, to new: DashboardSidePanelKind,
-                        order: [DashboardTile] = DashboardTile.allCases) -> Bool {
-        let oldIndex = order.firstIndex(of: tile(old))
-        let newIndex = order.firstIndex(of: tile(new))
-        if let oldIndex, let newIndex { return newIndex > oldIndex }
-        let fallback = DashboardTile.allCases
-        return (fallback.firstIndex(of: tile(new)) ?? 0) >
-            (fallback.firstIndex(of: tile(old)) ?? 0)
+    static func revealDuration(from start: CGFloat, to end: CGFloat) -> TimeInterval {
+        let fullDuration = start < end ? enterDuration : exitDuration
+        return fullDuration * max(0.35, sqrt(abs(end - start)))
+    }
+
+    static func timing(opening: Bool) -> (Double, Double, Double, Double) {
+        opening ? (0.20, 0.70, 0.25, 1) : (0.40, 0, 0.75, 1)
+    }
+
+    static func animation(opening: Bool) -> Animation {
+        let (x1, y1, x2, y2) = timing(opening: opening)
+        return .timingCurve(x1, y1, x2, y2, duration: opening ? enterDuration : exitDuration)
     }
 
     /// Interpolate all frame edges with the same easing. When top or the near

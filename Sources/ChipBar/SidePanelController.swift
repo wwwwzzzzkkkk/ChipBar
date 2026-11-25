@@ -29,6 +29,10 @@ import QuartzCore
     private var lastParentHorizontalFrame: CGRect?
     private var lastVisibleFrame: CGRect?
     private let pageMotionKey = "chipbar.sidecar.page-motion"
+    private let revealMask = CALayer()
+    private let revealKey = "chipbar.sidecar.reveal"
+    private var revealCleanupTask: Task<Void, Never>?
+    private var revealStart: RevealPresentation?
     private var contentFitTask: Task<Void, Never>?
     private var measuredContentHeight: CGFloat = 0
     private var resetClusterScrollOnFit = false
@@ -184,7 +188,7 @@ import QuartzCore
         relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
-        let interrupted = contentPresentation()
+        let interrupted = revealPresentation()
 
         let needsRelocation = wasVisible && SidePanelPlacement.requiresRelocation(
             from: panel.frame, to: hint, parent: parent.frame, visible: visible)
@@ -194,9 +198,8 @@ import QuartzCore
             scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
         }
 
-        // Never resize a native glass window on a frame timer. The
-        // compositor animates its clipped content; the window changes
-        // geometry once, while hidden for a cross-side transfer.
+        // The compositor reveals the glass and content together. Only commit
+        // a new window frame once, while hidden for a cross-side transfer.
         var expandAtDestination = unfolding
         if needsRelocation {
             let oldFrame = panel.frame
@@ -209,22 +212,16 @@ import QuartzCore
                 let token = transition
                 contentFitTask?.cancel()
                 contentFitTask = nil
-                navigationDeadline = ProcessInfo.processInfo.systemUptime
-                    + SidePanelNavigationMotion.relocationDuration
-                animateContent(
-                    from: interrupted.offset,
-                    to: SidePanelNavigationMotion.edgeOffset(on: oldSide, relocating: true),
-                    fromOpacity: interrupted.opacity, toOpacity: SidePanelNavigationMotion.exitOpacity,
-                    duration: SidePanelNavigationMotion.relocationDuration,
-                    entering: false)
+                let duration = animateReveal(from: interrupted, opening: false, side: oldSide)
+                navigationDeadline = ProcessInfo.processInfo.systemUptime + duration
                 relocationTask = Task { @MainActor [weak self, weak parent] in
-                    do { try await Task.sleep(for: .milliseconds(
-                        Int(SidePanelNavigationMotion.relocationDuration * 1000))) }
+                    do { try await Task.sleep(for: .seconds(duration)) }
                     catch { return }
                     guard let self, let parent, self.transition == token,
                           !Task.isCancelled else { return }
                     self.relocationTask = nil
                     self.panel.orderOut(nil)
+                    self.clearReveal()
                     self.present(kind, beside: parent, unfolding: true)
                 }
                 return
@@ -233,6 +230,7 @@ import QuartzCore
             // intersect Home. Remove it immediately rather than animating
             // an invalid frame; animate only its arrival on the legal side.
             panel.orderOut(nil)
+            clearReveal()
             expandAtDestination = true
         }
         let switchingInPlace = isSwitch && panel.isVisible
@@ -266,22 +264,10 @@ import QuartzCore
 
         // Render the actual page and resolve the @Published selection race
         // while the native glass window is still hidden. Replacing a loading
-        // shell after a 90ms delay caused a second visible composition pass.
-        // The clip layer is the only surface that transitions. Its old and new
-        // content slide inside the existing rounded glass material.
+        // shell after a delay would cause a second visible composition pass.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        if switchingInPlace, let priorKind {
-            let push = CATransition()
-            push.type = .push
-            push.subtype = SidePanelNavigationMotion.forward(from: priorKind, to: kind,
-                order: DashboardTileLayoutModel.shared.arrangement.order)
-                ? .fromRight : .fromLeft
-            push.duration = SidePanelNavigationMotion.duration
-            push.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.75, 0.30, 1.0)
-            scrollView.contentView.layer?.add(push, forKey: pageMotionKey)
-        }
         host.setFrameSize(NSSize(width: width, height: SidePanelLayout.height(for: kind)))
         host.rootView = AnyView(DashboardSidePanelView(
             monitor: monitor, state: state, close: onClose,
@@ -333,61 +319,148 @@ import QuartzCore
         if SidePanelNavigationMotion.needsFrameCommit(from: panel.frame, to: target) {
             panel.setFrame(target, display: false)
         }
-        let resumingDeparture = wasVisible && !expandAtDestination && (priorKind == nil || wasRelocating)
-        let arriving = !switchingInPlace && (!wasVisible || expandAtDestination || resumingDeparture)
-        if switchingInPlace || arriving {
-            navigationDeadline = ProcessInfo.processInfo.systemUptime
-                + (switchingInPlace ? SidePanelNavigationMotion.duration
-                                    : SidePanelNavigationMotion.enterDuration)
-        }
+        let arriving = !wasVisible || expandAtDestination
+        let resuming = !arriving && (priorKind == nil || wasRelocating || interrupted.fraction < 1)
         panel.alphaValue = 1
         scrollClusterToTop()
         if isCluster { resetClusterScrollOnFit = false }
-        if arriving {
-            let startOffset = resumingDeparture ? interrupted.offset
-                : SidePanelNavigationMotion.edgeOffset(on: placement.side, relocating: expandAtDestination)
-            let startOpacity = resumingDeparture ? interrupted.opacity : SidePanelNavigationMotion.exitOpacity
-            animateContent(
-                from: startOffset, to: 0, fromOpacity: startOpacity, toOpacity: 1,
-                duration: SidePanelNavigationMotion.enterDuration, entering: true)
+        if arriving || resuming {
+            panel.contentView?.layoutSubtreeIfNeeded()
+            let duration = animateReveal(from: arriving ? .closed : interrupted,
+                                         opening: true, side: placement.side)
+            navigationDeadline = ProcessInfo.processInfo.systemUptime + duration
+        } else if switchingInPlace {
+            let duration = animatePageFromSeam(placement.side)
+            navigationDeadline = ProcessInfo.processInfo.systemUptime + duration
         }
-        panel.makeKeyAndOrderFront(nil)
+        // Pointer navigation can leave Home key, so its Liquid Glass stays
+        // active. Keyboard navigation still needs focus in the destination.
+        let eventType = NSApp.currentEvent?.type
+        if parent.isKeyWindow && eventType != .keyDown && eventType != .keyUp {
+            panel.orderFront(nil)
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+        }
         if kind == .power { scheduleContentFit() }
     }
 
-    /// Retarget an interrupted edge transition from the displayed values.
-    private func contentPresentation() -> (offset: CGFloat, opacity: Float) {
-        guard let layer = scrollView.contentView.layer,
-              let shown = layer.presentation() else { return (0, 1) }
-        return (shown.transform.m41 - layer.transform.m41, shown.opacity)
+    private struct RevealPresentation {
+        let fraction: CGFloat
+        let opacity: Float
+        static let closed = Self(fraction: 0, opacity: 0)
     }
 
-    /// Transform and opacity animations affect only the clipped content
-    /// surface. The rounded NSGlassEffectView remains at its final geometry.
-    private func animateContent(from: CGFloat, to: CGFloat,
-                                fromOpacity: Float, toOpacity: Float,
-                                duration: TimeInterval, entering: Bool) {
-        guard let layer = scrollView.contentView.layer else { return }
-        let slide = CABasicAnimation(keyPath: "transform.translation.x")
-        slide.fromValue = from
-        slide.toValue = to
-        slide.isAdditive = true
-        let opacity = CABasicAnimation(keyPath: "opacity")
-        opacity.fromValue = fromOpacity
-        opacity.toValue = toOpacity
-        slide.duration = duration
-        opacity.duration = duration
-        let group = CAAnimationGroup()
-        group.animations = [slide, opacity]
-        group.duration = duration
-        group.timingFunction = entering
-            ? CAMediaTimingFunction(controlPoints: 0.20, 0.70, 0.25, 1.0)
-            : CAMediaTimingFunction(controlPoints: 0.40, 0.0, 0.75, 1.0)
-        if !entering {
-            group.fillMode = .forwards
-            group.isRemovedOnCompletion = false
+    /// Read the compositor's current width before reversing, including when
+    /// a second click lands before the first rendered frame.
+    private func revealPresentation() -> RevealPresentation {
+        guard panel.isVisible else { return .closed }
+        let content = scrollView.contentView.layer
+        let opacity = (content?.presentation() ?? content)?.opacity ?? 1
+        guard panel.contentView?.layer?.mask === revealMask else {
+            return RevealPresentation(fraction: 1, opacity: opacity)
         }
-        layer.add(group, forKey: pageMotionKey)
+        guard let renderedMask = revealMask.presentation() else {
+            return revealStart ?? RevealPresentation(fraction: 1, opacity: opacity)
+        }
+        let width = max(1, panel.contentView?.bounds.width ?? 0)
+        return RevealPresentation(fraction: min(1, max(0, renderedMask.bounds.width / width)),
+                                  opacity: opacity)
+    }
+
+    private func revealTiming(opening: Bool) -> CAMediaTimingFunction {
+        let (x1, y1, x2, y2) = SidePanelNavigationMotion.timing(opening: opening)
+        return CAMediaTimingFunction(controlPoints: Float(x1), Float(y1), Float(x2), Float(y2))
+    }
+
+    private func clearReveal() {
+        revealCleanupTask?.cancel()
+        revealCleanupTask = nil
+        revealStart = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        revealMask.removeAnimation(forKey: revealKey)
+        panel.contentView?.layer?.mask = nil
+        scrollView.contentView.layer?.removeAnimation(forKey: revealKey)
+        scrollView.contentView.layer?.opacity = 1
+        panel.ignoresMouseEvents = false
+        CATransaction.commit()
+    }
+
+    private func animateReveal(from start: RevealPresentation, opening: Bool,
+                               side: SidePanelPlacement.Side) -> TimeInterval {
+        clearReveal()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let view = panel.contentView, let material = view.layer,
+              let content = scrollView.contentView.layer,
+              view.bounds.width > 0, view.bounds.height > 0 else { return 0 }
+        let target: CGFloat = opening ? 1 : 0
+        let duration = SidePanelNavigationMotion.revealDuration(from: start.fraction, to: target)
+        let size = view.bounds.size
+        let seam = SidePanelNavigationMotion.seamAnchor(on: side)
+        let easing = revealTiming(opening: opening)
+        revealStart = start
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        // Keep the NSPanel and the material at their final size. Only the
+        // mask edge moves, with the edge nearest Home held at the seam.
+        revealMask.backgroundColor = NSColor.black.cgColor
+        revealMask.cornerRadius = material.cornerRadius
+        revealMask.cornerCurve = .continuous
+        revealMask.anchorPoint = CGPoint(x: seam, y: 0.5)
+        revealMask.position = CGPoint(x: size.width * seam, y: size.height / 2)
+        revealMask.bounds = CGRect(x: 0, y: 0, width: size.width * target, height: size.height)
+        material.mask = revealMask
+        let width = CABasicAnimation(keyPath: "bounds.size.width")
+        width.fromValue = size.width * start.fraction
+        width.toValue = size.width * target
+        width.timingFunction = easing
+        width.duration = duration
+        revealMask.add(width, forKey: revealKey)
+
+        // Give the text a head start on closing and hold it during the first
+        // part of a fresh opening, so the revealed edge seldom cuts a label.
+        content.opacity = opening ? 1 : 0
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = opening ? [start.opacity, start.opacity, 1] : [start.opacity, 0, 0]
+        let delay = 0.30 * (1 - start.fraction)
+        fade.keyTimes = opening ? [0, NSNumber(value: delay), 1] : [0, 0.40, 1]
+        fade.duration = duration
+        fade.timingFunction = easing
+        content.add(fade, forKey: revealKey)
+        panel.ignoresMouseEvents = true
+
+        if opening {
+            revealCleanupTask = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: .seconds(duration)) }
+                catch { return }
+                self?.clearReveal()
+            }
+        }
+        return duration
+    }
+
+    /// A switch between two open pages keeps their shared glass in place.
+    private func animatePageFromSeam(_ side: SidePanelPlacement.Side) -> TimeInterval {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let content = scrollView.contentView.layer else { return 0 }
+        let slide = CABasicAnimation(keyPath: "transform.translation.x")
+        slide.fromValue = SidePanelNavigationMotion.edgeOffset(on: side)
+        slide.toValue = 0
+        slide.isAdditive = true
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.30
+        fade.toValue = 1
+        let duration = SidePanelNavigationMotion.enterDuration
+        slide.duration = duration
+        fade.duration = duration
+        let group = CAAnimationGroup()
+        group.animations = [slide, fade]
+        group.duration = duration
+        group.timingFunction = revealTiming(opening: true)
+        content.add(group, forKey: pageMotionKey)
+        return duration
     }
 
     private func scheduleClusterFit() {
@@ -526,25 +599,22 @@ import QuartzCore
         clusterDisclosureAnimationDeadline = 0
         navigationDeadline = 0
         contentAnchoredTop = nil
-        let interrupted = contentPresentation()
+        let interrupted = revealPresentation()
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
-        // Keep the glass itself opaque. Only the content retreats; an
-        // interrupted close cancels this task before it can hide a reopened page.
         guard animated, panel.isVisible else {
             panel.orderOut(nil)
+            clearReveal()
             host.rootView = AnyView(EmptyView())
             return
         }
-        animateContent(from: interrupted.offset,
-            to: SidePanelNavigationMotion.edgeOffset(on: openedOnRight ? .right : .left),
-            fromOpacity: interrupted.opacity, toOpacity: SidePanelNavigationMotion.exitOpacity,
-            duration: SidePanelNavigationMotion.enterDuration, entering: false)
+        let duration = animateReveal(from: interrupted, opening: false,
+                                     side: openedOnRight ? .right : .left)
         closeMotionTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(
-                Int(SidePanelNavigationMotion.enterDuration * 1000))) }
+            do { try await Task.sleep(for: .seconds(duration)) }
             catch { return }
             guard let self, self.transition == token, !Task.isCancelled else { return }
             self.panel.orderOut(nil)
+            self.clearReveal()
             self.scrollView.contentView.layer?.removeAnimation(forKey: self.pageMotionKey)
             self.host.rootView = AnyView(EmptyView())
             self.closeMotionTask = nil

@@ -10,13 +10,20 @@ struct ClusterSidecarSizingTests {
         #expect(SidePanelLayout.clusterDisclosureAnimationDuration > 0)
     }
 
-    @Test func moduleSwitchDirectionFollowsTileArrangement() {
-        #expect(SidePanelNavigationMotion.forward(from: .externalDisk, to: .power))
-        #expect(SidePanelNavigationMotion.forward(from: .power, to: .cluster))
-        #expect(!SidePanelNavigationMotion.forward(from: .cluster, to: .power))
-        #expect(!SidePanelNavigationMotion.forward(from: .power, to: .power))
-        #expect(SidePanelNavigationMotion.forward(from: .cluster, to: .power,
-            order: [.cluster, .powerSupply]))
+    @Test func sidecarRevealKeepsTheEdgeNearestHomeFixed() {
+        #expect(SidePanelNavigationMotion.seamAnchor(on: .right) == 0)
+        #expect(SidePanelNavigationMotion.seamAnchor(on: .left) == 1)
+        #expect(SidePanelNavigationMotion.edgeOffset(on: .right) < 0)
+        #expect(SidePanelNavigationMotion.edgeOffset(on: .left) > 0)
+    }
+
+    @Test func reversingARevealUsesTheRemainingDistance() {
+        let open = SidePanelNavigationMotion.revealDuration(from: 0, to: 1)
+        let close = SidePanelNavigationMotion.revealDuration(from: 1, to: 0)
+        #expect(open == SidePanelNavigationMotion.enterDuration)
+        #expect(close == SidePanelNavigationMotion.exitDuration)
+        #expect(SidePanelNavigationMotion.revealDuration(from: 0.6, to: 1) < open)
+        #expect(SidePanelNavigationMotion.revealDuration(from: 0.4, to: 0) < close)
     }
 
     @Test func nativeWindowGeometryIsCommittedOnlyIfChanged() {
@@ -25,10 +32,6 @@ struct ClusterSidecarSizingTests {
         #expect(!SidePanelNavigationMotion.needsFrameCommit(from: current, to: current))
         #expect(SidePanelNavigationMotion.needsFrameCommit(from: current, to: target))
         #expect(!SidePanelNavigationMotion.needsFrameCommit(from: target, to: target))
-        #expect(SidePanelNavigationMotion.edgeOffset(on: .right) < 0)
-        #expect(SidePanelNavigationMotion.edgeOffset(on: .left) > 0)
-        #expect(abs(SidePanelNavigationMotion.edgeOffset(on: .right, relocating: true))
-            > abs(SidePanelNavigationMotion.edgeOffset(on: .right)))
     }
 
     @Test func sidecarUsesLeftWhenDestinationWidthCannotFitOnRight() throws {
