@@ -21,18 +21,11 @@ struct DashboardRunway: View {
         return max(0, min(1, percentage / 100))
     }
 
-    private var readout: Text {
-        if let capacityReadout { return Text(capacityReadout).fontWeight(.semibold) }
-        let value = Text(subtitle).fontWeight(.semibold)
-        let context = Text(detail).foregroundColor(.secondary)
-        return Text("\(value) · \(context)")
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+                .frame(height: 15)
                 .padding(.bottom, 5)
             ZStack {
                 Circle()
@@ -43,20 +36,28 @@ struct DashboardRunway: View {
                     .rotationEffect(.degrees(-90))
                     .animation(reduceMotion || !active ? nil :
                         .spring(response: 0.55, dampingFraction: 1), value: fraction)
-                if percentage?.isFinite == true {
-                    RunwayPercentage(value: fraction * 100)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                } else {
-                    Text("—").font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(.secondary)
+                VStack(spacing: 1) {
+                    if percentage?.isFinite == true {
+                        RunwayPercentage(value: fraction * 100)
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    } else {
+                        Text("—").font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    if capacityReadout == nil {
+                        Text(detail)
+                            .font(.system(size: compact ? 9 : 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
+                .monospacedDigit()
             }
             .frame(width: compact ? 51 : 65, height: compact ? 51 : 65)
             .padding(.bottom, 6)
             .accessibilityHidden(true)
-            readout
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+            Text(capacityReadout ?? subtitle)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .frame(height: 16)
@@ -66,7 +67,8 @@ struct DashboardRunway: View {
         .padding(.horizontal, 5)
         .glassTile(radius: 22, subdued: true)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title)，\(percentage.map { String(format: "%.0f%%", $0) } ?? "占用不可用")，\(subtitle)，\(detail)" +
+        .accessibilityLabel("\(title)，\(percentage.map { String(format: "%.0f%%", $0) } ?? "占用不可用")，\(subtitle)，" +
+                            (capacityReadout == nil ? "温度 \(detail)" : detail) +
                             (pressureStatus.map { "，内存压力\($0)" } ?? ""))
     }
 }

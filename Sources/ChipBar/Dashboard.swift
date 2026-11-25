@@ -558,7 +558,7 @@ struct Dashboard: View {
     }
 
     private func temperatureSummary(_ temperature: Double?) -> String {
-        guard let temperature, temperature.isFinite else { return "温度不可用" }
+        guard let temperature, temperature.isFinite else { return "— °C" }
         return String(format: "%.1f°C", temperature)
     }
 
