@@ -40,7 +40,7 @@ enum DashboardViewportHeight {
     private var layoutSubscription: AnyCancellable?
     private var tileEditorSubscription: AnyCancellable?
     private lazy var layoutCoordinator = PanelLayoutCoordinator { [weak self] in
-        self?.refresh()
+        self?.refresh(animateResize: true)
     }
     private var scrollObserver: NSObjectProtocol?
     private var menuPreferences: AnyCancellable?
@@ -51,10 +51,8 @@ enum DashboardViewportHeight {
     private var settingsNavigationSubscription: AnyCancellable?
     private var systemDisclosureSubscription: AnyCancellable?
     private var navigationViewportHeight: CGFloat?
-    // While the user is editing/reordering, retain the exact glass-window
-    // viewport size for the rest of the current menu session. Only the
-    // scrollable document may grow; selecting/dragging must never recenter the
-    // NSPanel or shift the entire page vertically.
+    // Keep the glass window fixed during editing. Once editing ends, refit the
+    // window to the settled tile arrangement.
     private var tileEditViewportHeight: CGFloat?
     /// The system disclosure predicts the first expansion immediately and
     /// caches measured heights for subsequent openings in the same process.
@@ -228,10 +226,15 @@ enum DashboardViewportHeight {
         }
         tileEditorSubscription = DashboardTileLayoutModel.shared.$editing
             .dropFirst()
+            .removeDuplicates()
             .sink { [weak self] editing in
-                guard let self, editing, self.panelRequestedVisible,
-                      self.tileEditViewportHeight == nil else { return }
-                self.tileEditViewportHeight = self.panel.frame.height
+                guard let self, self.panelRequestedVisible else { return }
+                if editing && self.tileEditViewportHeight == nil {
+                    self.tileEditViewportHeight = self.panel.frame.height
+                } else if !editing && self.tileEditViewportHeight != nil {
+                    self.tileEditViewportHeight = nil
+                    self.layoutCoordinator.request()
+                }
             }
 
         // Synchronous main-thread state delivery: resetForOpening() happens
@@ -556,18 +559,18 @@ enum DashboardViewportHeight {
         let documentHeight = max(height, size.height)
         let documentSize = NSSize(width: DashboardLayout.width, height: documentHeight)
         if hostingView.frame.size != documentSize { hostingView.setFrameSize(documentSize) }
-        if let frame = panelFrame(size: size), contentHeightChanged || forceLayout {
-            if frame != panel.frame {
-                if animateResize && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                    NSAnimationContext.runAnimationGroup { context in
-                        context.duration = DashboardMotion.navigationResize
-                        context.timingFunction = DashboardMotion.navigationSpringCurve
-                        panel.animator().setFrame(frame, display: true)
-                    }
-                } else {
-                    panel.setFrame(frame, display: false)
+        if let frame = panelFrame(size: size), frame != panel.frame {
+            if animateResize && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = DashboardMotion.navigationResize
+                    context.timingFunction = DashboardMotion.navigationSpringCurve
+                    panel.animator().setFrame(frame, display: true)
                 }
+            } else {
+                panel.setFrame(frame, display: false)
             }
+        }
+        if contentHeightChanged || forceLayout {
             panelMaterial.layoutSubtreeIfNeeded()
         }
         if switchingPage || contentHeightChanged || oldViewportHeight != size.height || forceLayout {
