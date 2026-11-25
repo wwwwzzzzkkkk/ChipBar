@@ -42,9 +42,9 @@ enum DashboardTile: String, CaseIterable, Identifiable {
     /// changes where tiles flow but does not squash ring gauges or charts.
     var columns: Int {
         switch self {
-        case .powerTrend, .cpuCores, .storage, .powerSupply, .applications, .cluster: return 6
+        case .powerTrend, .cpuCores, .storage, .powerSupply: return 6
         case .cpu, .gpu, .memory: return 2
-        case .fan, .ane: return 3
+        case .fan, .ane, .applications, .cluster: return 3
         }
     }
 }

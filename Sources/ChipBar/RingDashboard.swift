@@ -10,6 +10,7 @@ struct DashboardRunway: View {
     let subtitle: String
     let detail: String
     var pressureStatus: String? = nil
+    var capacityReadout: String? = nil
     var active = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,13 +21,19 @@ struct DashboardRunway: View {
         return max(0, min(1, percentage / 100))
     }
 
+    private var readout: Text {
+        if let capacityReadout { return Text(capacityReadout).fontWeight(.semibold) }
+        let value = Text(subtitle).fontWeight(.semibold)
+        let context = Text(detail).foregroundColor(.secondary)
+        return Text("\(value) · \(context)")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
-                .frame(height: compact ? 16 : 20)
-                .padding(.bottom, compact ? 3 : 4)
+                .padding(.bottom, 5)
             ZStack {
                 Circle()
                     .stroke(.quaternary, lineWidth: 6)
@@ -46,27 +53,18 @@ struct DashboardRunway: View {
                 }
             }
             .frame(width: compact ? 51 : 65, height: compact ? 51 : 65)
-            .padding(.bottom, compact ? 5 : 10)
+            .padding(.bottom, 6)
             .accessibilityHidden(true)
-            Text(subtitle)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+            readout
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .frame(height: 18)
-            Text(detail)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
                 .frame(height: 16)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, compact ? 7 : 10)
+        .padding(.vertical, compact ? 8 : 10)
         .padding(.horizontal, 5)
-        .glassTile(radius: 26)
+        .glassTile(radius: 22, subdued: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title)，\(percentage.map { String(format: "%.0f%%", $0) } ?? "占用不可用")，\(subtitle)，\(detail)" +
                             (pressureStatus.map { "，内存压力\($0)" } ?? ""))

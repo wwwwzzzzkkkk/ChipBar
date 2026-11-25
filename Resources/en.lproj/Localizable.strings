@@ -81,6 +81,7 @@
 "网络速率" = "Network throughput";
 "磁盘速率" = "Disk throughput";
 "SSD 温度" = "SSD temperature";
+"选择显示温度的 SSD" = "Choose SSD temperatures to show";
 "菜单栏 SSD 温度" = "Menu bar SSD temperature";
 "即使当前没有外置硬盘也能修改此偏好" = "You can change this option even without an external drive";
 "已显示" = "Shown";

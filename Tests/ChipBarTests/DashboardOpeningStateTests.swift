@@ -20,9 +20,6 @@ import ChipBarCore
         #expect(!DashboardLayout.usesCompactHome(sizeInMillimeters: .zero, visibleHeight: 1100))
         #expect(DashboardLayout.viewportLimit(availableHeight: 920, compact: true) == 828)
         #expect(DashboardLayout.viewportLimit(availableHeight: 1100, compact: false) == 1100)
-        #expect(DashboardLayout.columns(for: .applications, compact: true) == 3)
-        #expect(DashboardLayout.columns(for: .cluster, compact: false) == 6)
-        #expect(DashboardLayout.columns(for: .powerTrend, compact: true) == 6)
     }
 
     @Test func normalReopenResetsEveryEphemeralControl() {

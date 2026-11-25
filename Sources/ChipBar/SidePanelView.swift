@@ -20,7 +20,7 @@ enum SidePanelLayout {
     static let applicationHeight: CGFloat = 250
     // Opening estimate used only until the native window measures its content.
     static let powerHeight: CGFloat = 360
-    static let diskHeight: CGFloat = 410
+    static let diskHeight: CGFloat = 334
     static let clusterHeight: CGFloat = 310
     static let clusterDisclosureAnimationDuration = 0.24
 

@@ -3,7 +3,7 @@ import Testing
 @testable import ChipBar
 
 struct DashboardTileLayoutTests {
-    @Test func defaultLayoutKeepsOriginalTileProportions() {
+    @Test func defaultLayoutUsesHalfWidthForUtilityEntrances() {
         let arrangement = DashboardTileArrangement()
         #expect(arrangement.visible == DashboardTile.allCases)
         #expect(DashboardTile.powerTrend.columns == 6)
@@ -15,8 +15,8 @@ struct DashboardTileLayoutTests {
         #expect(DashboardTile.ane.columns == 3)
         #expect(DashboardTile.storage.columns == 6)
         #expect(DashboardTile.powerSupply.columns == 6)
-        #expect(DashboardTile.applications.columns == 6)
-        #expect(DashboardTile.cluster.columns == 6)
+        #expect(DashboardTile.applications.columns == 3)
+        #expect(DashboardTile.cluster.columns == 3)
     }
 
     @Test func corruptOrOldPreferencesCannotLoseModulesOrDuplicateTiles() {

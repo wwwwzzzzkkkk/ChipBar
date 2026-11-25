@@ -29,10 +29,6 @@ enum DashboardLayout {
     static func tileCornerRadius(_ radius: CGFloat, compact: Bool) -> CGFloat {
         compact ? min(radius, 17) : radius
     }
-
-    static func columns(for tile: DashboardTile, compact: Bool) -> Int {
-        compact && (tile == .applications || tile == .cluster) ? 3 : tile.columns
-    }
 }
 
 private struct CompactDashboardKey: EnvironmentKey {
@@ -259,7 +255,7 @@ struct Dashboard: View {
                                 }
                         )
                         .accessibilityHint("长按约半秒进入排列模式，然后按住直接移动；松手弹性落位")
-                        .chipBarTileSpan(DashboardLayout.columns(for: tile, compact: state.compactHome))
+                        .chipBarTileSpan(tile.columns)
                 }
             }
             .coordinateSpace(name: "chipbar.tileMosaic")
@@ -315,6 +311,7 @@ struct Dashboard: View {
                 color: MemoryPressureRingStyle.tint(for: monitor.memoryPressure),
                 subtitle: memoryUsedSummary, detail: memoryTotalSummary,
                 pressureStatus: monitor.memoryPressure.title,
+                capacityReadout: memoryCapacityReadout,
                 active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping)
         case .cpuCores:
             CPUCoreUsageSection(samplingInterval: monitor.interval,
@@ -410,6 +407,11 @@ struct Dashboard: View {
         return ChipBarLocale.format("Total %.1f GB", "共 %.1f GB", memory.totalGiB)
     }
 
+    private var memoryCapacityReadout: String {
+        guard monitor.connected, let memory = monitor.sample?.memory else { return "— / — GB" }
+        return String(format: "%.1f / %.1f GB", memory.usedGiB, memory.totalGiB)
+    }
+
     /// One and only one power history chart: the headline and real rolling
     /// 10-minute graph form the dashboard's single information focal point.
     // The heading and plot share a fixed height for each density so
@@ -501,6 +503,7 @@ struct Dashboard: View {
                 subtitle: memoryUsedSummary,
                 detail: memoryTotalSummary,
                 pressureStatus: monitor.memoryPressure.title,
+                capacityReadout: memoryCapacityReadout,
                 active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping)
         }
     }
@@ -632,6 +635,19 @@ struct Dashboard: View {
                         menuChoice(.disk)
                         menuSSDTemperatureChoice
                     }
+                }
+                if monitor.ssd.menuTemperaturesEnabled && !monitor.ssd.readings.isEmpty {
+                    Menu {
+                        ForEach(monitor.ssd.readings) { disk in
+                            Toggle(disk.name, isOn: Binding(
+                                get: { monitor.ssd.showsTemperatureInMenu(for: disk.id) },
+                                set: { monitor.ssd.setTemperatureInMenu($0, for: disk.id) }
+                            ))
+                        }
+                    } label: {
+                        Label("选择显示温度的 SSD", systemImage: "externaldrive")
+                    }
+                    .font(.caption)
                 }
                 if monitor.menuItems.contains(.power) {
                     LiquidGlassSegmentedSelector(

@@ -24,7 +24,7 @@ struct ClusterOverviewTile: View {
                                                 cluster.onlinePeers.count + 1)
                          : cluster.connectionStatus.title)
                         .font(.caption2).foregroundStyle(.secondary)
-                        .lineLimit(compact ? 1 : nil)
+                        .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
@@ -32,11 +32,11 @@ struct ClusterOverviewTile: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
-            .frame(height: compact ? 39 : 54)
+            .frame(height: compact ? 39 : 41)
             .frame(maxWidth: .infinity)
-            .glassTile(radius: 24, tint: selected ? accent.opacity(0.12) : nil,
+            .glassTile(radius: 21, tint: selected ? accent.opacity(0.12) : nil,
                        interactive: true)
-            .contentShape(RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(24, compact: compact)))
+            .contentShape(RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(21, compact: compact)))
         }
         .buttonStyle(ChipBarPressStyle())
         .accessibilityLabel("计算集群，只读监控")

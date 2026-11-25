@@ -72,7 +72,6 @@ struct ExternalDiskDetailView: View {
                         String(format: "%.1f", $0)
                     } ?? "—", unit: "MB/s", symbol: "arrow.up", color: violet)
                 }
-                menuToggleCard(diskID: selected.diskID)
             } else {
                 Text("磁盘已断开")
                     .font(.caption)
@@ -150,27 +149,6 @@ struct ExternalDiskDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 11))
-    }
-
-    private func menuToggleCard(diskID: String) -> some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("在菜单栏显示").font(.caption.weight(.semibold))
-                Text("显示此磁盘的温度")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            Toggle("", isOn: Binding(
-                get: { ssd.showsTemperatureInMenu(for: diskID) },
-                set: { ssd.setTemperatureInMenu($0, for: diskID) }
-            ))
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .accessibilityLabel("在菜单栏显示此磁盘温度")
-        }
-        .padding(12)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 13))
     }
 
     private func spaceText(_ bytes: Int64) -> (amount: String, unit: String) {
