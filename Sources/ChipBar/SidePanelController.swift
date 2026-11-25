@@ -36,6 +36,8 @@ import QuartzCore
     private var clusterViewportPinned = false
     private var clusterDisclosureAnimationDeadline: TimeInterval = 0
     private var contentAnchoredTop: CGFloat?
+    private var powerScrollSubscription: AnyCancellable?
+    private var powerViewportTracksScroll = false
     private var clusterLayoutSubscription: AnyCancellable?
     private var clusterTaskSubscription: AnyCancellable?
     private var externalTaskSubscription: AnyCancellable?
@@ -118,9 +120,18 @@ import QuartzCore
                     + SidePanelLayout.clusterDisclosureAnimationDuration + 0.02
                 self.scheduleClusterFit()
             }
+        let center = NotificationCenter.default
+        let clip = scrollView.contentView
+        clip.postsBoundsChangedNotifications = true
+        powerScrollSubscription = center.publisher(for: NSView.boundsDidChangeNotification, object: clip)
+            .map { ($0.object as? NSClipView)?.bounds.origin.y }
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self, self.openedKind == .power, self.powerViewportTracksScroll else { return }
+                self.scheduleContentFit()
+            }
         // Re-evaluate only horizontal geometry and display bounds, not every
         // telemetry-driven change of the dashboard's intrinsic height.
-        let center = NotificationCenter.default
         parentGeometrySubscription = Publishers.Merge4(
             center.publisher(for: NSWindow.didMoveNotification),
             center.publisher(for: NSWindow.didResizeNotification),
@@ -241,6 +252,7 @@ import QuartzCore
         measuredContentHeight = 0
         resetClusterScrollOnFit = kind == .cluster
         contentAnchoredTop = nil
+        powerViewportTracksScroll = false
         openedKind = kind
         scrollView.verticalScrollElasticity = kind == .cluster ? .none : .automatic
         scrollView.hasVerticalScroller = false
@@ -419,22 +431,30 @@ import QuartzCore
             let content = natural.isFinite && natural > 0
                 ? min(10_000, ceil(natural)) : SidePanelLayout.height(for: kind)
             let old = self.panel.frame
+            let clip = self.scrollView.contentView
+            let previousScrollY = clip.bounds.origin.y
+            let previousScrollX = clip.bounds.origin.x
             let isCluster = kind == .cluster
             let top = ClusterSidecarSizing.stableTop(
                 openedAt: self.contentAnchoredTop ?? old.maxY,
                 visibleMaxY: visible.maxY)
-            let proposed = isCluster
+            let available = isCluster
                 ? ClusterSidecarSizing.windowHeight(content: content, available: visible.height)
                 : SidePanelPlacement.powerViewportHeight(content: content, anchoredTop: top, visible: visible)
+            // Shrink from the bottom even when a disclosure is clicked after
+            // scrolling down. Let the viewport grow again as the user scrolls up.
+            let remainingContent = max(1, content - max(0, previousScrollY))
+            self.powerViewportTracksScroll = !isCluster && remainingContent < available
+            let proposed = self.powerViewportTracksScroll ? remainingContent : available
             let resizeWindow = isCluster
                 ? ClusterSidecarSizing.shouldResizeWindow(
                     from: old.height, to: proposed, available: visible.height,
                     userDisclosurePinned: self.clusterViewportPinned)
-                : abs(old.height - proposed) > 1
+                : abs(old.height - proposed) >= 0.5
             let height = resizeWindow ? proposed : old.height
-            let clip = self.scrollView.contentView
-            let previousScrollY = clip.bounds.origin.y
-            let previousScrollX = clip.bounds.origin.x
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
 
             // Keep the full document available when its viewport is capped
             // by the screen or pinned by a Cluster task disclosure.

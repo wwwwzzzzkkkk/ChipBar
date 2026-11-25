@@ -6,7 +6,6 @@ import SwiftUI
 struct USBCPowerSection: View {
     let snapshot: USBCPowerSnapshot
     @State private var showsOtherPorts = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var active: [USBCPortMeasurement] { snapshot.sourcingPorts }
     private var others: [USBCPortMeasurement] {
@@ -74,27 +73,30 @@ struct USBCPowerSection: View {
             }
 
             if !others.isEmpty {
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button {
                         showsOtherPorts.toggle()
+                    } label: {
+                        HStack {
+                            Text(showsOtherPorts ? "收起其他接口" : "其他接口（\(others.count)）")
+                            Spacer()
+                            Image(systemName: showsOtherPorts ? "chevron.up" : "chevron.down")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 3)
+                        .contentShape(Rectangle())
                     }
-                } label: {
-                    HStack {
-                        Text(showsOtherPorts ? "收起其他接口" : "其他接口（\(others.count)）")
-                        Spacer()
-                        Image(systemName: showsOtherPorts ? "chevron.up" : "chevron.down")
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 3)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                if showsOtherPorts {
-                    ForEach(others) { port in
-                        USBCPortRow(port: port, tint: .secondary,
-                                    devices: snapshot.devices.filter { $0.portID == port.id })
+                    USBDisclosureDetails(expanded: showsOtherPorts) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(others) { port in
+                                USBCPortRow(port: port, tint: .secondary,
+                                            devices: snapshot.devices.filter { $0.portID == port.id })
+                            }
+                        }
+                        .padding(.top, 10)
                     }
                 }
             }
@@ -109,7 +111,6 @@ private struct USBCPortRow: View {
     let tint: Color
     let devices: [USBCDeviceLink]
     @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var currentSpeed: String {
         if let thunderbolt = port.currentGbps { return USBCFormat.speed(thunderbolt) }
@@ -122,9 +123,7 @@ private struct USBCPortRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                    expanded.toggle()
-                }
+                expanded.toggle()
             } label: {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 6) {
@@ -169,28 +168,30 @@ private struct USBCPortRow: View {
             }
             .buttonStyle(.plain)
 
-            if expanded {
-                Rectangle().fill(Color.primary.opacity(0.10))
-                    .frame(height: 1)
-                    .padding(.vertical, 9)
-                HStack(spacing: 8) {
-                    valueCard("输出电压", value: port.voltage, unit: "V")
-                    valueCard("输出电流", value: port.current, unit: "A")
-                }
-                if !devices.isEmpty {
-                    ForEach(devices.prefix(4)) { device in
-                        HStack(spacing: 7) {
-                            Image(systemName: "externaldrive")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                            Text(device.name)
-                                .font(.system(size: 10))
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(USBCFormat.speed(device.linkGbps))
-                                .font(.system(size: 10, weight: .medium))
+            USBDisclosureDetails(expanded: expanded) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Rectangle().fill(Color.primary.opacity(0.10))
+                        .frame(height: 1)
+                        .padding(.vertical, 9)
+                    HStack(spacing: 8) {
+                        valueCard("输出电压", value: port.voltage, unit: "V")
+                        valueCard("输出电流", value: port.current, unit: "A")
+                    }
+                    if !devices.isEmpty {
+                        ForEach(devices.prefix(4)) { device in
+                            HStack(spacing: 7) {
+                                Image(systemName: "externaldrive")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                Text(device.name)
+                                    .font(.system(size: 10))
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(USBCFormat.speed(device.linkGbps))
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .padding(.top, 7)
                         }
-                        .padding(.top, 7)
                     }
                 }
             }
@@ -219,14 +220,11 @@ private struct USBCPortRow: View {
 struct USBDeviceLinkSection: View {
     let devices: [USBCDeviceLink]
     @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                    expanded.toggle()
-                }
+                expanded.toggle()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "cable.connector.horizontal")
@@ -245,44 +243,83 @@ struct USBDeviceLinkSection: View {
             }
             .buttonStyle(.plain)
 
-            if expanded {
-                if devices.isEmpty {
-                    Text("暂未识别到 USB 设备")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(devices.prefix(12)) { device in
-                    HStack(spacing: 8) {
-                        Image(systemName: "externaldrive")
+            USBDisclosureDetails(expanded: expanded) {
+                VStack(alignment: .leading, spacing: 9) {
+                    if devices.isEmpty {
+                        Text("暂未识别到 USB 设备")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(device.name)
-                                .font(.system(size: 11, weight: .semibold))
-                                .lineLimit(1)
-                            if let portID = device.portID {
-                                Text(portID.replacingOccurrences(of: "Port-", with: "")
-                                    .replacingOccurrences(of: "@", with: " "))
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let allocated = device.allocatedWatts {
-                                Text("USB 分配功率 \(USBCFormat.watts(allocated, precision: 1)) W")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer(minLength: 4)
-                        Text(USBCFormat.speed(device.linkGbps))
-                            .font(.system(size: 11, weight: .semibold))
-                            .monospacedDigit()
                     }
-                    .padding(.vertical, 5)
+                    ForEach(devices.prefix(12)) { device in
+                        HStack(spacing: 8) {
+                            Image(systemName: "externaldrive")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(device.name)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
+                                if let portID = device.portID {
+                                    Text(portID.replacingOccurrences(of: "Port-", with: "")
+                                        .replacingOccurrences(of: "@", with: " "))
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let allocated = device.allocatedWatts {
+                                    Text("USB 分配功率 \(USBCFormat.watts(allocated, precision: 1)) W")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            Text(USBCFormat.speed(device.linkGbps))
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
+                        }
+                        .padding(.vertical, 5)
+                    }
                 }
+                .padding(.top, 9)
             }
         }
         .padding(12)
         .glassTile(radius: 26)
+    }
+}
+
+private struct USBDisclosureDetails<Content: View>: View {
+    let expanded: Bool
+    @ViewBuilder let content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        USBDisclosureLayout(progress: expanded ? 1 : 0) {
+            content
+        }
+        .clipped()
+        .allowsHitTesting(expanded)
+        .accessibilityHidden(!expanded)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: expanded)
+    }
+}
+
+/// Reveal detail from its top edge and report the visible height to the side panel.
+private struct USBDisclosureLayout: Layout {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews[0].sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: size.width, height: size.height * min(max(progress, 0), 1))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: bounds.origin, anchor: .topLeading,
+                          proposal: ProposedViewSize(width: bounds.width, height: nil))
     }
 }
 

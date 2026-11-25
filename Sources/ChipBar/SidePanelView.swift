@@ -342,6 +342,11 @@ struct DashboardSidePanelView: View {
                 onContentHeightChange?(height)
             }
         }
+        // A disclosure can update SwiftUI's intrinsic size before AppKit
+        // catches up. Keep the document top-aligned even between those updates.
+        .frame(minHeight: displayedKind == .power ? 0 : nil,
+               maxHeight: displayedKind == .power ? .infinity : nil,
+               alignment: .topLeading)
         .buttonStyle(ChipBarPressStyle())
     }
 }
