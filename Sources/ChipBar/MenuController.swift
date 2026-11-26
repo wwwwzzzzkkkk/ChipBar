@@ -11,6 +11,24 @@ enum DashboardViewportHeight {
     }
 }
 
+enum StatusPanelMotion {
+    static func extent(in viewport: CGSize, progress: CGFloat) -> CGSize {
+        let seed = CGSize(width: min(108, viewport.width * 0.34),
+                          height: min(88, viewport.height * 0.30))
+        return CGSize(width: seed.width + (viewport.width - seed.width) * progress,
+                      height: seed.height + (viewport.height - seed.height) * progress)
+    }
+
+    static func progress(for height: CGFloat, in viewport: CGSize) -> CGFloat {
+        let start = extent(in: viewport, progress: 0).height
+        return min(1, max(0, (height - start) / max(1, viewport.height - start)))
+    }
+
+    static func anchorX(statusMidX: CGFloat, frame: CGRect) -> CGFloat {
+        min(0.96, max(0.04, (statusMidX - frame.minX) / max(1, frame.width)))
+    }
+}
+
 @MainActor private final class MenuPanel: NSPanel {
     var onEscape: (() -> Void)?
     override var canBecomeKey: Bool { true }
@@ -30,6 +48,18 @@ enum DashboardViewportHeight {
     private var dashboardMounted = false
     private var panelRequestedVisible = false
     private var panelTransition = UUID()
+    private let panelRevealMask = CALayer()
+    private let panelRevealKey = "chipbar.status-panel.reveal"
+    private var panelRevealTask: Task<Void, Never>?
+    private var pendingRevealRefit = false
+    private var revealViewport = CGSize.zero
+    private var revealAnchorX: CGFloat = 1
+    private struct PanelPose {
+        let progress: CGFloat
+        let opacity: Float
+        static let closed = Self(progress: 0, opacity: 0)
+    }
+    private var revealStart = PanelPose.closed
     private var autoDismissal: Task<Void, Never>?
     private var mouseDownTarget: Bool?
     private var mouseSequence = UUID()
@@ -524,6 +554,10 @@ enum DashboardViewportHeight {
     private func refresh(forceLayout: Bool = false, animateResize: Bool = false) {
         if forceLayout { layoutCoordinator.cancelPending() }
         guard dashboardMounted, forceLayout || panel.isVisible else { return }
+        if !forceLayout, panelRequestedVisible, panelRevealTask != nil {
+            pendingRevealRefit = true
+            return
+        }
         // Sensor/status updates may arrive during a tile lift. Do not ask
         // NSHostingView.fittingSize to reflow a live spring animation and
         // inadvertently recenter the entire glass window while dragging.
@@ -742,13 +776,12 @@ enum DashboardViewportHeight {
         }
         openProfileMark(usedCachedHeight ? "cached geometry" : "full geometry", since: openedAt)
         positionPanel()
-        if !panel.isVisible { panel.alphaValue = 0 }
         panelRequestedVisible = true
+        animatePanel(visible: true, anchorX: rect.midX)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(nil)
         panel.displayIfNeeded()
         openProfileMark("first display", since: openedAt)
-        animatePanel(visible: true)
     }
 
     private func hidePanel(animated: Bool = true) {
@@ -763,34 +796,101 @@ enum DashboardViewportHeight {
         animatePanel(visible: false, animated: animated)
     }
 
-    private func animatePanel(visible: Bool, animated: Bool = true) {
+    private func currentPanelPose() -> PanelPose {
+        guard panel.isVisible, let layer = panelMaterial.layer else { return .closed }
+        guard panelRevealTask != nil else { return PanelPose(progress: 1, opacity: 1) }
+        let opacity = layer.presentation()?.opacity ?? revealStart.opacity
+        if layer.mask === panelRevealMask,
+           let height = panelRevealMask.presentation()?.bounds.height {
+            return PanelPose(progress: StatusPanelMotion.progress(for: height, in: revealViewport),
+                             opacity: opacity)
+        }
+        return PanelPose(progress: layer.mask == nil ? CGFloat(opacity) : revealStart.progress,
+                         opacity: opacity)
+    }
+
+    private func animatePanel(visible: Bool, animated: Bool = true, anchorX: CGFloat? = nil) {
+        let start = currentPanelPose()
+        panelRevealTask?.cancel()
+        panelRevealTask = nil
         let token = UUID()
         panelTransition = token
         statusItem.button?.highlight(false)
         compactMenu.needsDisplay = true
+        if let anchorX {
+            revealAnchorX = StatusPanelMotion.anchorX(statusMidX: anchorX, frame: panel.frame)
+        }
+        revealStart = start
+        revealViewport = panelMaterial.bounds.size
+        let target: CGFloat = visible ? 1 : 0
+        let material = panelMaterial.layer
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        material?.removeAnimation(forKey: panelRevealKey)
+        material?.mask = nil
+        material?.opacity = 1
+        panelRevealMask.removeAnimation(forKey: panelRevealKey)
+        panel.ignoresMouseEvents = !visible
         let complete: () -> Void = { [weak self] in
             guard let self, self.panelTransition == token else { return }
+            self.panelRevealTask = nil
+            if !visible { self.panel.orderOut(nil) }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self.panelMaterial.layer?.mask = nil
+            self.panelMaterial.layer?.opacity = 1
+            self.panelRevealMask.removeAnimation(forKey: self.panelRevealKey)
+            self.panel.alphaValue = visible ? 1 : 0
+            CATransaction.commit()
             if visible {
                 self.statusItem.button?.highlight(false)
                 self.panel.invalidateShadow()
+                if self.pendingRevealRefit { self.layoutCoordinator.request() }
             } else {
-                self.panel.orderOut(nil)
                 self.removeDashboard()
             }
+            self.pendingRevealRefit = false
         }
-        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            panel.alphaValue = visible ? 1 : 0
+        guard animated, let material, revealViewport.width > 0, revealViewport.height > 0 else {
             complete()
             return
         }
-        // AppKit animates opacity on the existing window; reversing a transition
-        // keeps its current opacity. Old completions cannot hide a reopened panel.
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = visible ? DashboardMotion.popoverEnter : DashboardMotion.popoverExit
-            context.timingFunction = DashboardMotion.popoverCurve
-            panel.animator().alphaValue = visible ? 1 : 0
-        } completionHandler: {
-            Task { @MainActor in complete() }
+        panel.alphaValue = 1
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let distance = abs(target - start.progress)
+        let fullDuration = visible ? DashboardMotion.popoverEnter : DashboardMotion.popoverExit
+        let duration = reduceMotion ? 0.15 : fullDuration * max(0.32, sqrt(distance))
+        let (x1, y1, x2, y2) = SidePanelNavigationMotion.timing(opening: visible)
+        let easing = CAMediaTimingFunction(controlPoints: Float(x1), Float(y1), Float(x2), Float(y2))
+        if !reduceMotion {
+            let initial = StatusPanelMotion.extent(in: revealViewport, progress: start.progress)
+            let final = StatusPanelMotion.extent(in: revealViewport, progress: target)
+            panelRevealMask.backgroundColor = NSColor.black.cgColor
+            panelRevealMask.cornerRadius = material.cornerRadius
+            panelRevealMask.cornerCurve = .continuous
+            panelRevealMask.anchorPoint = CGPoint(x: revealAnchorX, y: 1)
+            panelRevealMask.position = CGPoint(x: revealViewport.width * revealAnchorX, y: revealViewport.height)
+            panelRevealMask.bounds = CGRect(origin: .zero, size: final)
+            material.mask = panelRevealMask
+            let extent = CABasicAnimation(keyPath: "bounds.size")
+            extent.fromValue = NSValue(size: initial)
+            extent.toValue = NSValue(size: final)
+            extent.duration = duration
+            extent.timingFunction = easing
+            panelRevealMask.add(extent, forKey: panelRevealKey)
+        }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = start.opacity
+        fade.toValue = target
+        fade.duration = duration
+        fade.timingFunction = easing
+        material.opacity = Float(target)
+        material.add(fade, forKey: panelRevealKey)
+        panelRevealTask = Task { @MainActor in
+            do { try await Task.sleep(for: .seconds(duration)) }
+            catch { return }
+            complete()
         }
     }
 
@@ -1182,23 +1282,23 @@ enum DashboardViewportHeight {
         statusItem.button?.performClick(nil)
         guard !panelRequestedVisible else { failVerification("Second status click did not request dismissal.") }
         try? await Task.sleep(nanoseconds: 60_000_000)
-        let closingAlpha = panel.alphaValue
+        let closingAlpha = currentPanelPose().opacity
         try? await Task.sleep(nanoseconds: 250_000_000)
         guard !panel.isVisible, !dashboardMounted, panel.alphaValue == 0 else {
             failVerification("Animated panel dismissal failed.")
         }
         statusItem.button?.performClick(nil)
         try? await Task.sleep(nanoseconds: 60_000_000)
-        let openingAlpha = panel.alphaValue
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        let openingAlpha = currentPanelPose().opacity
+        try? await Task.sleep(for: .seconds(DashboardMotion.popoverEnter))
         guard panel.isVisible, dashboardMounted, !dashboardState.showSettings, panel.alphaValue == 1 else {
             failVerification("Panel reopening did not restore its default home screen.")
         }
-        // Close, then reopen while fade-out is still in flight.
+        // Close, then reopen while the outline is still contracting.
         togglePanel()
         try? await Task.sleep(nanoseconds: 30_000_000)
         togglePanel()
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        try? await Task.sleep(for: .seconds(DashboardMotion.popoverEnter + 0.06))
         guard panelRequestedVisible, panel.isVisible, dashboardMounted, panel.alphaValue == 1 else {
             failVerification("Interrupted close hid a reopened panel.")
         }
@@ -1207,7 +1307,7 @@ enum DashboardViewportHeight {
             togglePanel()
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        try? await Task.sleep(for: .seconds(DashboardMotion.popoverEnter + 0.06))
         guard panelRequestedVisible, panel.isVisible, panel.alphaValue == 1 else {
             failVerification("Rapid status toggles left the wrong panel state.")
         }

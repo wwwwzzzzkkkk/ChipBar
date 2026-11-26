@@ -83,13 +83,13 @@ enum SidePanelPlacement {
         let right = max(0, bounds.maxX - rightEdge)
         let left = max(0, leftEdge - bounds.minX)
         let side: Side
-        // Keep the current seam for page switches when it can still fit a
-        // standard card. Fresh openings choose the side with the better fit.
-        let usable = min(SidePanelLayout.width, preferredWidth)
-        if stayingOn == .right, right >= usable { side = .right }
-        else if stayingOn == .left, left >= usable { side = .left }
+        // Keep the seam only if the destination fits there. If neither
+        // side can show the full document, use the larger viewport.
+        if stayingOn == .right, right >= preferredWidth { side = .right }
+        else if stayingOn == .left, left >= preferredWidth { side = .left }
         else if right >= preferredWidth { side = .right }
         else if left >= preferredWidth { side = .left }
+        else if right == left, let stayingOn { side = stayingOn }
         else { side = right >= left ? .right : .left }
         let available = side == .right ? right : left
         guard available >= min(minimumViewportWidth, preferredWidth) else { return nil }

@@ -5,6 +5,23 @@ import Testing
 import ChipBarCore
 
 @MainActor struct DashboardOpeningStateTests {
+    @Test func statusPanelGrowsTowardItsFullViewportWithTheSameReversePath() {
+        let viewport = CGSize(width: 378, height: 878)
+        let initial = StatusPanelMotion.extent(in: viewport, progress: 0)
+        let halfway = StatusPanelMotion.extent(in: viewport, progress: 0.5)
+        #expect(initial.width < halfway.width)
+        #expect(initial.height < halfway.height)
+        #expect(StatusPanelMotion.progress(for: halfway.height, in: viewport) == 0.5)
+        #expect(StatusPanelMotion.extent(in: viewport, progress: 1) == viewport)
+    }
+
+    @Test func statusPanelAnchorTracksTheStatusItemWithinItsViewport() {
+        let frame = CGRect(x: 600, y: 100, width: 378, height: 878)
+        #expect(StatusPanelMotion.anchorX(statusMidX: frame.midX, frame: frame) == 0.5)
+        #expect(StatusPanelMotion.anchorX(statusMidX: frame.maxX + 16, frame: frame) == 0.96)
+        #expect(StatusPanelMotion.anchorX(statusMidX: frame.minX - 16, frame: frame) == 0.04)
+    }
+
     @Test func compactHomeUsesDisplaySpaceWithoutChangingSavedTileOrder() {
         #expect(DashboardLayout.usesCompactHome(
             sizeInMillimeters: CGSize(width: 301, height: 195), visibleHeight: 1150))

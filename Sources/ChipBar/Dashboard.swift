@@ -48,9 +48,8 @@ enum DashboardMotion {
     // The page slide finishes before the glass window settles to its new size.
     static let navigationResize = 0.34
     static let navigationSpringCurve = CAMediaTimingFunction(controlPoints: 0.22, 0.72, 0.30, 1.00)
-    static let popoverEnter = 0.18
-    static let popoverExit = 0.14
-    static let popoverCurve = CAMediaTimingFunction(name: .easeInEaseOut)
+    static let popoverEnter = 0.31
+    static let popoverExit = 0.25
 }
 
 final class DashboardState: ObservableObject {
