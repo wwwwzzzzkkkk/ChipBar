@@ -59,6 +59,7 @@ enum NetworkSamplingPolicy {
     @Published private(set) var dashboardVisible = false
     var needsPowerUSBDevices = false
     private var powerSamplingTask: Task<Void, Never>?
+    private var applicationHistoryTask: Task<Void, Never>?
     private let startsAutomatically: Bool
     @Published var interval: Int {
         didSet { UserDefaults.standard.set(interval, forKey: "interval"); restart() }
@@ -113,11 +114,15 @@ enum NetworkSamplingPolicy {
                 guard let self else { return }
                 self.sleeping = false; self.configureNetwork(); self.restartMenuDisk(); self.restart()
                 self.startPowerSampling()
+                self.startApplicationHistorySampling()
             }
         })
         ssdSubscription = ssd.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         startMemoryPressureMonitoring()
-        if start { restart(); restartMenuDisk(); configureNetwork(); startPowerSampling() }
+        if start {
+            restart(); restartMenuDisk(); configureNetwork(); startPowerSampling()
+            startApplicationHistorySampling()
+        }
     }
 
     private func startMemoryPressureMonitoring() {
@@ -279,6 +284,17 @@ enum NetworkSamplingPolicy {
         }
     }
 
+    private func startApplicationHistorySampling() {
+        guard startsAutomatically, !paused, !sleeping, applicationHistoryTask == nil else { return }
+        applicationHistoryTask = Task { [weak self] in
+            while !Task.isCancelled, self != nil {
+                await ApplicationActivityModel.shared.refreshHistory()
+                do { try await Task.sleep(for: .seconds(ApplicationUsageHistory.interval)) }
+                catch { return }
+            }
+        }
+    }
+
     private func configureNetwork() {
         // The home dashboard has no network widget. A panel open must not
         // activate route-table queries unless network speed is in the menu bar.
@@ -317,6 +333,9 @@ enum NetworkSamplingPolicy {
             powerSamplingTask?.cancel()
             powerSamplingTask = nil
             ChipBarPowerFlowModel.shared.resetHistoryContinuity()
+            applicationHistoryTask?.cancel()
+            applicationHistoryTask = nil
+            ApplicationActivityModel.shared.resetHistoryContinuity()
         }
         if forQuit {
             ssd.shutdown(); network.setPaused(true); menuDiskSampler = nil; menuDisk = nil
@@ -412,6 +431,7 @@ enum NetworkSamplingPolicy {
         } else {
             restart()
             startPowerSampling()
+            startApplicationHistorySampling()
         }
     }
 

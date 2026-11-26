@@ -23,7 +23,7 @@ enum SidePanelLayout {
     static let powerHeight: CGFloat = 360
     static let diskHeight: CGFloat = 334
     static let clusterHeight: CGFloat = 310
-    static let powerHistoryHeight: CGFloat = 400
+    static let powerHistoryHeight: CGFloat = 530
     static let clusterDisclosureAnimationDuration = SidePanelNavigationMotion.enterDuration
 
     static func width(for kind: DashboardSidePanelKind?) -> CGFloat {

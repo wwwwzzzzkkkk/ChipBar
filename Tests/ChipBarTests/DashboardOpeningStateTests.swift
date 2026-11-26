@@ -61,6 +61,19 @@ import ChipBarCore
         #expect(state.applicationsExpansion == 0)
     }
 
+    @Test func powerHistoryEntryTogglesAndReopeningUsesTheNewSelection() {
+        let state = DashboardState()
+        let event = PowerHistorySelection.event(Date(timeIntervalSince1970: 100))
+        state.togglePowerHistory(event)
+        #expect(state.sidePanel == .powerHistory)
+        #expect(state.powerHistorySelection == event)
+        state.togglePowerHistory(.sample(Date(timeIntervalSince1970: 101)))
+        #expect(state.sidePanel == nil)
+        state.togglePowerHistory()
+        #expect(state.sidePanel == .powerHistory)
+        #expect(state.powerHistorySelection == nil)
+    }
+
     @Test func sidePanelNotificationsCarryNewValueBeforeStoredStateChanges() {
         let state = DashboardState()
         var emitted: DashboardSidePanelKind?

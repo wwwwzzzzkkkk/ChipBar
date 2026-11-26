@@ -36,12 +36,17 @@ struct PowerHistoryDetailView: View {
     @ObservedObject private var power = ChipBarPowerFlowModel.shared
 
     var body: some View {
+        DashboardGlassContainer { content }
+            .environment(\.appearsActive, true)
+    }
+
+    private var content: some View {
         let chart = monitor.powerChart.including(power.events)
         let timeline = chart.timeline
         let events = power.events.filter { timeline.fraction(for: $0.date) != nil }
         let visibleSelection = selection.flatMap { timeline.fraction(for: $0.date) == nil ? nil : $0 }
         let effectiveSelection = visibleSelection ?? chart.points.last.map { .sample($0.date) }
-        VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
             header
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
@@ -63,10 +68,11 @@ struct PowerHistoryDetailView: View {
                     }
             }
             .padding(12)
-            .glassTile(radius: 20)
+            .glassTile(radius: 20, tint: Color.primary.opacity(0.07), highlightsEdges: true)
 
             eventStrip(events)
             inspector(selection: effectiveSelection, events: events)
+            HistoricalApplicationUsageView(date: effectiveSelection?.date, timeline: timeline)
         }
     }
 
@@ -168,7 +174,7 @@ struct PowerHistoryDetailView: View {
         }
         .padding(12)
         .frame(height: 96, alignment: .topLeading)
-        .glassTile(radius: 18)
+        .glassTile(radius: 18, tint: Color.primary.opacity(0.07), highlightsEdges: true)
     }
 
     private func metric(_ label: String, _ value: String) -> some View {

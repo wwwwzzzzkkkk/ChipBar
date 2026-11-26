@@ -220,23 +220,53 @@ actor ApplicationActivitySampler {
     static let shared = ApplicationActivityModel()
 
     @Published private(set) var snapshot: ActivitySnapshot?
+    @Published private(set) var history = ApplicationUsageHistory()
     private let sampler = ApplicationActivitySampler()
     private var inFlightSample: Task<ActivitySnapshot, Never>?
     private var inFlightToken = UUID()
+    private var visibleWatchers = 0
+    private var historyNeedsCPUBaseline = false
 
     func watch(interval: Int, includeGPU: Bool) async {
+        visibleWatchers += 1
+        defer { visibleWatchers -= 1 }
         var sampleNext = ApplicationActivitySamplingPolicy.needsRefresh(
             snapshot, includeGPU: includeGPU, now: ProcessInfo.processInfo.systemUptime)
         while !Task.isCancelled {
             if sampleNext {
                 let result = await sampleOnce(includeGPU: includeGPU)
                 guard !Task.isCancelled else { return }
-                snapshot = result
+                publish(result)
             }
             sampleNext = true
             do { try await Task.sleep(nanoseconds: UInt64(max(2000, interval)) * 1_000_000) }
             catch { return }
         }
+    }
+
+    func refreshHistory() async {
+        // The open ranking already feeds the history. A CPU-only background
+        // pass could otherwise erase the live GPU tab's counter baselines.
+        guard visibleWatchers == 0 else { return }
+        let result = await sampleOnce(includeGPU: false)
+        guard !Task.isCancelled, visibleWatchers == 0 else { return }
+        publish(result)
+    }
+
+    func resetHistoryContinuity() {
+        historyNeedsCPUBaseline = true
+    }
+
+    private func publish(_ result: ActivitySnapshot) {
+        guard snapshot.map({ result.sampledAt > $0.sampledAt }) ?? true else { return }
+        snapshot = result
+        let age = ProcessInfo.processInfo.systemUptime - result.sampledAt
+        var updated = history
+        if updated.record(result, at: Date().addingTimeInterval(-age),
+                          includesCPU: !historyNeedsCPUBaseline) {
+            history = updated
+        }
+        historyNeedsCPUBaseline = false
     }
 
     private func sampleOnce(includeGPU: Bool) async -> ActivitySnapshot {

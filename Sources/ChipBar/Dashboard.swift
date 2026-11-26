@@ -98,6 +98,14 @@ final class DashboardState: ObservableObject {
         showApplications.toggle()
         applicationsExpansion = showApplications ? 1 : 0
     }
+    func togglePowerHistory(_ selection: PowerHistorySelection? = nil) {
+        if sidePanel == .powerHistory {
+            sidePanel = nil
+        } else {
+            powerHistorySelection = selection
+            sidePanel = .powerHistory
+        }
+    }
     func toggleSettings() { showSettings.toggle() }
 }
 
@@ -444,7 +452,7 @@ struct Dashboard: View {
                 timeline: chart.timeline,
                 accent: accent,
                 events: powerReading.events,
-                onSelect: openPowerHistory
+                onSelect: togglePowerHistory
             )
             .frame(height: powerChartHeight)
         }
@@ -452,6 +460,7 @@ struct Dashboard: View {
 
     private var hero: some View {
         let chart = monitor.powerChart.including(powerReading.events)
+        let expanded = state.sidePanel == .powerHistory
         return VStack(alignment: .leading, spacing: state.compactHome ? 5 : 8) {
             HStack(alignment: .top, spacing: 4) {
                 totalPowerHeadline
@@ -465,27 +474,33 @@ struct Dashboard: View {
                 Text(ChipBarLocale.choose("Average \(average) W", "均值 \(average) W"))
                     .monospacedDigit()
                 Button {
-                    openPowerHistory(nil)
+                    togglePowerHistory(nil)
                 } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    Image(systemName: expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 9, weight: .semibold))
                         .frame(width: 16, height: 14)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(ChipBarLocale.choose("View power history", "查看功率历史"))
-                .accessibilityLabel(ChipBarLocale.choose("View power history", "查看功率历史"))
+                .help(expanded ? ChipBarLocale.choose("Close power history", "收起功率历史")
+                      : ChipBarLocale.choose("View power history", "查看功率历史"))
+                .accessibilityLabel(expanded ? ChipBarLocale.choose("Close power history", "收起功率历史")
+                                    : ChipBarLocale.choose("View power history", "查看功率历史"))
             }
             .font(.system(size: 9))
             .foregroundStyle(.secondary)
         }
         .padding(state.compactHome ? 9 : 12)
-        .glassTile(radius: 26)
+        .glassTile(radius: 26, tint: expanded ? Color.primary.opacity(0.09) : nil,
+                   interactive: true)
+        .contentShape(RoundedRectangle(
+            cornerRadius: DashboardLayout.tileCornerRadius(26, compact: state.compactHome), style: .continuous))
+        .onTapGesture { togglePowerHistory(nil) }
     }
 
-    private func openPowerHistory(_ selection: PowerHistorySelection?) {
-        state.powerHistorySelection = selection
-        if state.sidePanel != .powerHistory { state.sidePanel = .powerHistory }
+    private func togglePowerHistory(_ selection: PowerHistorySelection?) {
+        guard !tileLayout.editing else { return }
+        state.togglePowerHistory(selection)
     }
 
     @ViewBuilder private var powerCards: some View {
