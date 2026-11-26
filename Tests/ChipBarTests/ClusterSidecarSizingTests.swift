@@ -26,6 +26,32 @@ struct ClusterSidecarSizingTests {
         #expect(SidePanelNavigationMotion.revealDuration(from: 0.4, to: 0) < close)
     }
 
+    @Test func revealOutlineFitsTheViewportFromTheFirstFrame() {
+        let viewport = CGSize(width: 314, height: 100)
+        let collapsed = SidePanelNavigationMotion.revealShape(at: 0, in: viewport, originY: 300)
+        let midpoint = SidePanelNavigationMotion.revealShape(at: 0.5, in: viewport, originY: 300)
+        let expanded = SidePanelNavigationMotion.revealShape(at: 1, in: viewport, originY: 300)
+        #expect(collapsed.size.width == 0)
+        #expect(collapsed.centerY + collapsed.size.height / 2 <= viewport.height)
+        #expect(midpoint.size.width == viewport.width / 2)
+        #expect(midpoint.size.height > collapsed.size.height)
+        #expect(midpoint.size.height < expanded.size.height)
+        #expect(expanded.size == viewport)
+        #expect(expanded.centerY == viewport.height / 2)
+    }
+
+    @Test func revealContentUsesTheSamePathWhenClosing() {
+        let progress: CGFloat = 0.55
+        let right = SidePanelNavigationMotion.revealContentOffset(at: progress, side: .right)
+        let left = SidePanelNavigationMotion.revealContentOffset(at: progress, side: .left)
+        #expect(right < 0)
+        #expect(right == -left)
+        #expect(SidePanelNavigationMotion.revealContentOffset(at: 1, side: .right) == 0)
+        #expect(SidePanelNavigationMotion.revealContentOpacity(at: 0) == 0)
+        #expect(SidePanelNavigationMotion.revealContentOpacity(at: progress) > 0.5)
+        #expect(SidePanelNavigationMotion.revealContentOpacity(at: 1) == 1)
+    }
+
     @Test func nativeWindowGeometryIsCommittedOnlyIfChanged() {
         let current = CGRect(x: 500, y: 600, width: 314, height: 250)
         let target = CGRect(x: 500, y: 210, width: 420, height: 640)

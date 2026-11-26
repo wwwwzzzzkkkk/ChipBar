@@ -138,9 +138,9 @@ enum SidePanelOpeningPolicy {
 
 /// Shared timing and fixed seam for every sidecar.
 enum SidePanelNavigationMotion {
-    static let enterDuration: TimeInterval = 0.27
-    static let exitDuration: TimeInterval = 0.235
-    static let pageDuration: TimeInterval = 0.25
+    static let enterDuration: TimeInterval = 0.31
+    static let exitDuration: TimeInterval = 0.25
+    static let pageDuration: TimeInterval = 0.30
 
     /// Avoid resizing the native viewport for content-only changes.
     static func needsFrameCommit(from current: CGRect, to target: CGRect) -> Bool {
@@ -161,7 +161,34 @@ enum SidePanelNavigationMotion {
     }
 
     static func timing(opening: Bool) -> (Double, Double, Double, Double) {
-        opening ? (0.20, 0.70, 0.25, 1) : (0.40, 0, 0.75, 1)
+        opening ? (0.22, 0.68, 0.26, 1) : (0.36, 0, 0.74, 1)
+    }
+
+    struct RevealShape: Equatable {
+        let size: CGSize
+        let centerY: CGFloat
+    }
+
+    static func revealShape(at fraction: CGFloat, in viewport: CGSize,
+                            originY: CGFloat?) -> RevealShape {
+        let height = viewport.height
+        let seedHeight = min(86, height * 0.42)
+        let lower = max(height * 0.18, seedHeight / 2)
+        let upper = min(height * 0.82, height - seedHeight / 2)
+        let seedCenter = min(upper, max(lower, originY ?? height * 0.73))
+        return RevealShape(
+            size: CGSize(width: viewport.width * fraction,
+                         height: seedHeight + (height - seedHeight) * fraction),
+            centerY: seedCenter + (height / 2 - seedCenter) * fraction)
+    }
+
+    static func revealContentOpacity(at fraction: CGFloat) -> CGFloat {
+        let value = min(1, max(0, (fraction - 0.14) / 0.68))
+        return value * value * (3 - 2 * value)
+    }
+
+    static func revealContentOffset(at fraction: CGFloat, side: SidePanelPlacement.Side) -> CGFloat {
+        edgeOffset(on: side) * 1.5 * (1 - fraction)
     }
 
     static func animation(opening: Bool) -> Animation {
