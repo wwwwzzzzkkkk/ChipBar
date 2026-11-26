@@ -58,6 +58,7 @@ final class DashboardState: ObservableObject {
     @Published var compactHome = false
     @Published var selectedExternalVolumeID: String? = nil
     @Published var chartMetric: PowerMetric = .total
+    @Published var powerHistorySelection: PowerHistorySelection?
     @Published var showSettings = false
     @Published var showApplications = CommandLine.arguments.contains("--apps")
     @Published var applicationsExpansion = CommandLine.arguments.contains("--apps") ? 1.0 : 0.0
@@ -80,6 +81,7 @@ final class DashboardState: ObservableObject {
         let system = arguments.contains("--system-details") || ssd
             || arguments.contains("--ssd-disclosure-only")
         chartMetric = .total
+        powerHistorySelection = nil
         sidePanel = nil
         selectedExternalVolumeID = nil
         showSettings = false
@@ -274,17 +276,6 @@ struct Dashboard: View {
             footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Exactly one sampler task for the dashboard. The old power tile used
-        // to own it, which left a USB-C-only layout without live readings.
-        .task(id: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping) {
-            guard monitor.dashboardVisible, !monitor.paused,
-                  !monitor.sleeping else { return }
-            await powerReading.watch(chipPower: {
-                monitor.connected ? monitor.sample?.total : nil
-            }, needsUSBDevices: {
-                state.sidePanel == .power
-            })
-        }
     }
 
     @ViewBuilder private func homeTile(_ tile: DashboardTile) -> some View {
@@ -439,8 +430,8 @@ struct Dashboard: View {
         .frame(width: 82, height: powerChartHeight, alignment: .topLeading)
     }
 
-    @ViewBuilder private var totalPowerChart: some View {
-        if monitor.powerChart.points.isEmpty {
+    @ViewBuilder private func totalPowerChart(_ chart: PowerChartSnapshot) -> some View {
+        if chart.points.isEmpty && powerReading.events.isEmpty {
             Text("等待功率采样")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -448,33 +439,53 @@ struct Dashboard: View {
                 .frame(height: powerChartHeight)
         } else {
             PowerTrendPlot(
-                points: monitor.powerChart.points,
-                maximum: monitor.powerChart.maximum,
-                timeline: monitor.powerChart.timeline,
-                accent: accent
+                points: chart.points,
+                maximum: chart.maximum,
+                timeline: chart.timeline,
+                accent: accent,
+                events: powerReading.events,
+                onSelect: openPowerHistory
             )
             .frame(height: powerChartHeight)
         }
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: state.compactHome ? 5 : 8) {
+        let chart = monitor.powerChart.including(powerReading.events)
+        return VStack(alignment: .leading, spacing: state.compactHome ? 5 : 8) {
             HStack(alignment: .top, spacing: 4) {
                 totalPowerHeadline
-                totalPowerChart
+                totalPowerChart(chart)
             }
             .frame(height: powerChartHeight, alignment: .top)
             HStack(spacing: 8) {
                 Text("最近 10 分钟")
                 Spacer()
-                Text(ChipBarLocale.choose("Average \(value(monitor.powerChart.average)) W", "均值 \(value(monitor.powerChart.average)) W"))
+                let average = value(chart.average)
+                Text(ChipBarLocale.choose("Average \(average) W", "均值 \(average) W"))
                     .monospacedDigit()
+                Button {
+                    openPowerHistory(nil)
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 16, height: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(ChipBarLocale.choose("View power history", "查看功率历史"))
+                .accessibilityLabel(ChipBarLocale.choose("View power history", "查看功率历史"))
             }
             .font(.system(size: 9))
             .foregroundStyle(.secondary)
         }
         .padding(state.compactHome ? 9 : 12)
         .glassTile(radius: 26)
+    }
+
+    private func openPowerHistory(_ selection: PowerHistorySelection?) {
+        state.powerHistorySelection = selection
+        if state.sidePanel != .powerHistory { state.sidePanel = .powerHistory }
     }
 
     @ViewBuilder private var powerCards: some View {

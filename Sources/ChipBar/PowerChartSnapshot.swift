@@ -10,6 +10,19 @@ struct PowerChartSnapshot {
     let average: Double?
     let timeline: TrendTimeWindow
 
+    func including(_ events: [PowerHistoryEvent]) -> Self {
+        guard let latest = events.last?.date, latest > timeline.end else { return self }
+        let window = TrendTimeWindow(endingAt: latest)
+        let visible = points.filter { window.fraction(for: $0.date) != nil }
+        guard visible.count != points.count else {
+            return Self(points: points, maximum: maximum, average: average, timeline: window)
+        }
+        let values = visible.map(\.power)
+        return Self(points: visible, maximum: max(1, (values.max() ?? 1) * 1.15),
+                    average: values.isEmpty ? nil : values.reduce(0, +) / Double(values.count),
+                    timeline: window)
+    }
+
     static var empty: Self {
         Self(points: [], maximum: 1, average: nil,
              timeline: TrendTimeWindow(endingAt: Date()))

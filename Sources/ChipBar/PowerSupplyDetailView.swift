@@ -30,6 +30,8 @@ struct PowerDistribution {
 
 /// Choose topology from hardware state, never from a model-name string.
 enum PowerSourceMode: Equatable {
+    static let batteryAssistThreshold = -0.5
+
     case desktop
     case battery
     case adapter
@@ -41,7 +43,7 @@ enum PowerSourceMode: Equatable {
         guard reading.onAdapter else { self = .battery; return }
         if reading.isCharging, (reading.batteryWatts ?? 0) > 0.5 {
             self = .adapterCharging
-        } else if (reading.batteryWatts ?? 0) < -0.5 {
+        } else if (reading.batteryWatts ?? 0) < Self.batteryAssistThreshold {
             self = .adapterAssisted
         } else {
             self = .adapter

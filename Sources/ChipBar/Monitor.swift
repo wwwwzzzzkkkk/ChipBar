@@ -57,6 +57,8 @@ enum NetworkSamplingPolicy {
     private(set) var menuDisk: DiskActivitySnapshot?
     private var menuDiskSampler: DiskActivitySampler?
     @Published private(set) var dashboardVisible = false
+    var needsPowerUSBDevices = false
+    private var powerSamplingTask: Task<Void, Never>?
     private let startsAutomatically: Bool
     @Published var interval: Int {
         didSet { UserDefaults.standard.set(interval, forKey: "interval"); restart() }
@@ -110,11 +112,12 @@ enum NetworkSamplingPolicy {
             Task { @MainActor in
                 guard let self else { return }
                 self.sleeping = false; self.configureNetwork(); self.restartMenuDisk(); self.restart()
+                self.startPowerSampling()
             }
         })
         ssdSubscription = ssd.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         startMemoryPressureMonitoring()
-        if start { restart(); restartMenuDisk(); configureNetwork() }
+        if start { restart(); restartMenuDisk(); configureNetwork(); startPowerSampling() }
     }
 
     private func startMemoryPressureMonitoring() {
@@ -255,7 +258,25 @@ enum NetworkSamplingPolicy {
             powerChart = PowerChartSnapshot.build(history: history, intervalMillis: interval)
         }
         dashboardVisible = visible
+        if visible || !startsAutomatically { startPowerSampling() }
         configureNetwork()
+    }
+
+    private func startPowerSampling() {
+        powerSamplingTask?.cancel()
+        powerSamplingTask = nil
+        guard !paused, !sleeping, startsAutomatically || dashboardVisible else { return }
+        powerSamplingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                if let self {
+                    await ChipBarPowerFlowModel.shared.sample(for: self)
+                } else {
+                    return
+                }
+                do { try await Task.sleep(nanoseconds: PowerSamplingCadence.nanoseconds) }
+                catch { return }
+            }
+        }
     }
 
     private func configureNetwork() {
@@ -292,7 +313,14 @@ enum NetworkSamplingPolicy {
     }
 
     func stop(forQuit: Bool = false) {
-        if forQuit { ssd.shutdown(); network.setPaused(true); menuDiskSampler = nil; menuDisk = nil }
+        if forQuit || paused || sleeping {
+            powerSamplingTask?.cancel()
+            powerSamplingTask = nil
+            ChipBarPowerFlowModel.shared.resetHistoryContinuity()
+        }
+        if forQuit {
+            ssd.shutdown(); network.setPaused(true); menuDiskSampler = nil; menuDisk = nil
+        }
         generation = UUID()
         retry?.cancel(); retry = nil
         watchdog?.invalidate(); watchdog = nil
@@ -377,7 +405,14 @@ enum NetworkSamplingPolicy {
         configureNetwork()
         restartMenuDisk()
         ssd.setPaused(paused)
-        if paused { stop(); status = ChipBarLocale.choose("Sampling paused", "采样已暂停"); error = nil } else { restart() }
+        if paused {
+            stop()
+            status = ChipBarLocale.choose("Sampling paused", "采样已暂停")
+            error = nil
+        } else {
+            restart()
+            startPowerSampling()
+        }
     }
 
     func chooseExecutable() {

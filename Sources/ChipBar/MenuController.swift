@@ -248,6 +248,7 @@ enum DashboardViewportHeight {
         sidePanelSubscription = dashboardState.$sidePanel.dropFirst()
             .sink { [weak self] side in
                 guard let self else { return }
+                self.monitor.needsPowerUSBDevices = side == .power
                 guard self.panelRequestedVisible else {
                     self.sidePanelController?.hide(animated: false)
                     return

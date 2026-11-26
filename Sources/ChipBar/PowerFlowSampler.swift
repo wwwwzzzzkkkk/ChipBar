@@ -55,11 +55,21 @@ actor ChipBarPowerSampler {
     private var missed = 0
 
     func read(includeUSBDevices: Bool = false) -> ChipBarPowerReading {
+        read(battery: Self.batteryState(), includeUSB: true, includeUSBDevices: includeUSBDevices)
+    }
+
+    func readBatteryHistory() -> ChipBarPowerReading? {
+        guard let battery = Self.batteryState() else { return nil }
+        return read(battery: battery, includeUSB: false, includeUSBDevices: false)
+    }
+
+    private func read(battery: BatteryState?, includeUSB: Bool,
+                      includeUSBDevices: Bool) -> ChipBarPowerReading {
         if smc == nil { smc = SMCReader() }
         // Collect USB-C telemetry from this same SMC connection, at the same
         // three-second cadence. No secondary timer or subprocess is needed.
-        let usb = USBCPowerReader.read(smc: smc, includeDevices: includeUSBDevices)
-        let battery = Self.batteryState()
+        let usb = includeUSB ? USBCPowerReader.read(smc: smc, includeDevices: includeUSBDevices)
+            : USBCPowerSnapshot()
 
         if let battery {
             // Read the three SMC physical domains independently. A missing
@@ -315,18 +325,35 @@ actor ChipBarPowerSampler {
     // The dashboard's independent 1/2/5/10 s macmon updates cannot jitter
     // the Sankey between SMC readings.
     @Published private(set) var chipWattsAtReading: Double?
+    @Published private(set) var events: [PowerHistoryEvent] = []
     private let sampler = ChipBarPowerSampler()
+    private var eventHistory = PowerHistoryEvents()
 
-    func watch(chipPower: @MainActor @escaping () -> Double?,
-               needsUSBDevices: @MainActor @escaping () -> Bool = { false }) async {
-        while !Task.isCancelled {
-            let shouldEnumerateDevices = needsUSBDevices()
-            let result = await sampler.read(includeUSBDevices: shouldEnumerateDevices)
-            guard !Task.isCancelled else { return }
-            chipWattsAtReading = chipPower()
-            reading = result
-            do { try await Task.sleep(nanoseconds: PowerSamplingCadence.nanoseconds) }
-            catch { return }
+    func resetHistoryContinuity() {
+        eventHistory.resetContinuity()
+    }
+
+    func sample(for monitor: Monitor) async {
+        let includesDetails = monitor.dashboardVisible
+        let result: ChipBarPowerReading?
+        if includesDetails {
+            result = await sampler.read(includeUSBDevices: monitor.needsPowerUSBDevices)
+        } else {
+            result = await sampler.readBatteryHistory()
+        }
+        guard !Task.isCancelled, !monitor.paused, !monitor.sleeping else { return }
+        let chipSample = monitor.connected ? monitor.sample : nil
+        if let result {
+            let changed = eventHistory.record(
+                result, at: Date(), chipSample: chipSample,
+                maximumChipAge: Double(monitor.interval) / 1_000 * 1.5)
+            if changed { events = eventHistory.events }
+            if includesDetails && monitor.dashboardVisible {
+                chipWattsAtReading = chipSample?.total
+                reading = result
+            }
+        } else {
+            resetHistoryContinuity()
         }
     }
 }

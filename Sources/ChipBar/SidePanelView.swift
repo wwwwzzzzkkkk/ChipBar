@@ -5,6 +5,7 @@ enum DashboardSidePanelKind: String, Equatable {
     case power
     case externalDisk
     case cluster
+    case powerHistory
 
     var fitsContentHeight: Bool { self == .power || self == .cluster }
 }
@@ -22,10 +23,16 @@ enum SidePanelLayout {
     static let powerHeight: CGFloat = 360
     static let diskHeight: CGFloat = 334
     static let clusterHeight: CGFloat = 310
+    static let powerHistoryHeight: CGFloat = 400
     static let clusterDisclosureAnimationDuration = SidePanelNavigationMotion.enterDuration
 
     static func width(for kind: DashboardSidePanelKind?) -> CGFloat {
-        kind == .power ? powerWidth : kind == .cluster ? 378 : width
+        switch kind {
+        case .power: return powerWidth
+        case .cluster: return 378
+        case .powerHistory: return 480
+        default: return width
+        }
     }
 
     static func contentWidth(for kind: DashboardSidePanelKind?) -> CGFloat {
@@ -38,6 +45,7 @@ enum SidePanelLayout {
         case .power: return powerHeight
         case .externalDisk: return diskHeight
         case .cluster: return clusterHeight
+        case .powerHistory: return powerHistoryHeight
         }
     }
 }
@@ -301,6 +309,9 @@ struct DashboardSidePanelView: View {
                 PowerSupplyDetailView(monitor: monitor,
                                       active: !monitor.paused && !monitor.sleeping,
                                       close: close)
+            case .powerHistory:
+                PowerHistoryDetailView(monitor: monitor, selection: $state.powerHistorySelection,
+                                       close: close)
             case .externalDisk:
                 if let id = state.selectedExternalVolumeID {
                     ExternalDiskDetailView(volumeID: id, ssd: monitor.ssd, close: close)
