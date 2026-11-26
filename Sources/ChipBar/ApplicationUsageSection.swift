@@ -13,6 +13,13 @@ struct ApplicationUsageSection: View {
     @StateObject private var activity = ApplicationActivityModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var samplingStartedInThisPanel = false
+    @State private var pendingExit: ExitConfirmation?
+    @State private var exitMessage: String?
+
+    private struct ExitConfirmation {
+        let target: ApplicationExitTarget
+        let force: Bool
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -27,13 +34,23 @@ struct ApplicationUsageSection: View {
             // Keep the ranking viewport and selector anchored while
             // replacing the displayed metric.
             ZStack(alignment: .topLeading) {
-                ranking(for: state.applicationMetric)
-                    .id(state.applicationMetric)
-                    .transition(reduceMotion ? .opacity :
-                        .asymmetric(
-                            insertion: .opacity
-                                .combined(with: .offset(y: -8)),
-                            removal: .opacity))
+                if let pendingExit {
+                    exitConfirmation(pendingExit)
+                } else if let exitMessage {
+                    VStack(spacing: 10) {
+                        Text(exitMessage).font(.caption).multilineTextAlignment(.center)
+                        Button(ChipBarLocale.choose("Back to ranking", "返回列表")) { self.exitMessage = nil }
+                            .buttonStyle(.bordered)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ranking(for: state.applicationMetric)
+                        .id(state.applicationMetric)
+                        .transition(reduceMotion ? .opacity :
+                            .asymmetric(
+                                insertion: .opacity.combined(with: .offset(y: -8)),
+                                removal: .opacity))
+                }
             }
             .frame(height: 84 + 56 * state.applicationsExpansion, alignment: .topLeading)
             .clipped()
@@ -102,17 +119,21 @@ struct ApplicationUsageSection: View {
                                         .frame(width: 15, height: 15)
                                         .accessibilityHidden(true)
                                 }
-                                Text(row.name).lineLimit(1).truncationMode(.middle)
-                                    .help("\(row.name) · 合并 \(row.processCount) 个进程；只统计可读取的计数器")
-                                Spacer(minLength: 5)
-                                Text(formatted(row, metric: metric))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.primary)
+                            Text(row.name).lineLimit(1).truncationMode(.middle)
+                                .help("\(row.name) · 合并 \(row.processCount) 个进程；只统计可读取的计数器")
+                            Spacer(minLength: 5)
+                            Text(formatted(row, metric: metric))
+                                .monospacedDigit()
+                                .foregroundStyle(.primary)
+                            if let path = row.appPath,
+                               let target = ApplicationExitTarget.running(at: path, named: row.name) {
+                                exitMenu(target)
+                            }
                             }
                         .font(.caption)
                         .frame(height: 28)
                         .opacity(index < 3 ? 1 : state.applicationsExpansion)
-                        .accessibilityElement(children: .combine)
+                        .accessibilityElement(children: .contain)
                         .accessibilityHidden(!state.showApplications && index >= 3)
                     }
                 }
@@ -122,6 +143,53 @@ struct ApplicationUsageSection: View {
         } else {
             message("正在读取应用占用…", symbol: "clock")
         }
+    }
+
+    private func exitMenu(_ target: ApplicationExitTarget) -> some View {
+        Menu {
+            Button(ChipBarLocale.choose("Quit…", "退出…")) {
+                pendingExit = ExitConfirmation(target: target, force: false)
+            }
+            Button(ChipBarLocale.choose("Force Quit…", "强制退出…"), role: .destructive) {
+                pendingExit = ExitConfirmation(target: target, force: true)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(ChipBarLocale.choose("Actions for \(target.name)", "\(target.name) 的操作"))
+    }
+
+    private func exitConfirmation(_ request: ExitConfirmation) -> some View {
+        let action = request.force ? ChipBarLocale.choose("Force Quit", "强制退出")
+            : ChipBarLocale.choose("Quit", "退出")
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("\(action) \(request.target.name)？")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+            Text(request.force ? ChipBarLocale.choose("Unsaved work in this app may be lost.",
+                                                     "此应用中未保存的内容可能丢失。")
+                 : ChipBarLocale.choose("The app can ask you to save before quitting.",
+                                        "应用可以在退出前提示你保存。"))
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Spacer()
+                Button(ChipBarLocale.choose("Cancel", "取消"), role: .cancel) { pendingExit = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button(action, role: request.force ? .destructive : nil) {
+                    exitMessage = request.target.requestExit(force: request.force)
+                    pendingExit = nil
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private func rankedRows(_ snapshot: ActivitySnapshot, metric: ApplicationResource) -> [ApplicationActivityRow] {

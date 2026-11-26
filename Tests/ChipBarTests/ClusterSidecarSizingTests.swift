@@ -61,6 +61,18 @@ struct ClusterSidecarSizingTests {
         #expect(SidePanelPlacement.isLegal(result.frame, beside: home, visible: screen))
     }
 
+    @Test func switchKeepsCurrentSeamWhenStandardCardFits() throws {
+        let visible = CGRect(x: 0, y: 0, width: 1512, height: 960)
+        let home = CGRect(x: 800, y: 28, width: 378, height: 900)
+        let switched = try #require(SidePanelPlacement.choose(
+            parent: home, visible: visible, preferredWidth: 480, preferredHeight: 530,
+            top: home.maxY, stayingOn: .right))
+        #expect(switched.side == .right)
+        #expect(switched.frame.minX == home.maxX + SidePanelPlacement.gap)
+        #expect(switched.frame.maxY == home.maxY)
+        #expect(switched.needsHorizontalScroll)
+    }
+
     @Test func smallScreenUsesScrollableFreeIntervalRatherThanOverlap() throws {
         let screen = CGRect(x: 0, y: 0, width: 1000, height: 500)
         let home = CGRect(x: 260, y: 12, width: 378, height: 470)

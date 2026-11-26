@@ -13,12 +13,13 @@ struct LiquidGlassSegmentedSelector<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [LiquidGlassSegment<Value>]
     let accessibilityLabel: String
+    var height: CGFloat = 40
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
-            let inset: CGFloat = 4
+            let inset: CGFloat = height <= 28 ? 3 : 4
             let width = max(1, (proxy.size.width - inset * 2) / CGFloat(max(options.count, 1)))
             let selectedIndex = CGFloat(options.firstIndex { $0.value == selection } ?? 0)
 
@@ -34,7 +35,7 @@ struct LiquidGlassSegmentedSelector<Value: Hashable>: View {
                 // across all choices. It does not create another glass panel
                 // or change the size of the enclosing settings tile.
                 LiquidGlassSelectionDroplet()
-                    .frame(width: max(1, width - 2), height: 34)
+                    .frame(width: max(1, width - 2), height: height - 6)
                     .modifier(LiquidGlassTravel(index: selectedIndex, step: width))
                     .padding(.leading, inset + 1)
                     .allowsHitTesting(false)
@@ -50,11 +51,11 @@ struct LiquidGlassSegmentedSelector<Value: Hashable>: View {
                             }
                         } label: {
                             Text(option.title)
-                                .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                                .font(.system(size: height <= 28 ? 11 : 12, weight: selected ? .semibold : .medium))
                                 .foregroundStyle(selected ? Color.primary : Color.secondary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
-                                .frame(width: width, height: 40)
+                                .frame(width: width, height: height)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -64,9 +65,9 @@ struct LiquidGlassSegmentedSelector<Value: Hashable>: View {
                 }
                 .padding(.horizontal, inset)
             }
-            .frame(width: proxy.size.width, height: 40)
+            .frame(width: proxy.size.width, height: height)
         }
-        .frame(height: 40)
+        .frame(height: height)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
     }

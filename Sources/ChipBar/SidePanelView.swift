@@ -73,7 +73,7 @@ enum SidePanelPlacement {
     }
 
     static func choose(parent: CGRect, visible: CGRect, preferredWidth: CGFloat,
-                       preferredHeight: CGFloat, top: CGFloat? = nil) -> Result? {
+                       preferredHeight: CGFloat, top: CGFloat? = nil, stayingOn: Side? = nil) -> Result? {
         let bounds = visible.insetBy(dx: edgeInset, dy: edgeInset)
         guard bounds.width > 0, bounds.height > 0,
               preferredWidth.isFinite, preferredWidth > 0,
@@ -83,9 +83,12 @@ enum SidePanelPlacement {
         let right = max(0, bounds.maxX - rightEdge)
         let left = max(0, leftEdge - bounds.minX)
         let side: Side
-        // Prefer right only when the FULL destination page fits. A narrower
-        // previous page is not evidence that the next page can fit there.
-        if right >= preferredWidth { side = .right }
+        // Keep the current seam for page switches when it can still fit a
+        // standard card. Fresh openings choose the side with the better fit.
+        let usable = min(SidePanelLayout.width, preferredWidth)
+        if stayingOn == .right, right >= usable { side = .right }
+        else if stayingOn == .left, left >= usable { side = .left }
+        else if right >= preferredWidth { side = .right }
         else if left >= preferredWidth { side = .left }
         else { side = right >= left ? .right : .left }
         let available = side == .right ? right : left
@@ -137,9 +140,9 @@ enum SidePanelOpeningPolicy {
 enum SidePanelNavigationMotion {
     static let enterDuration: TimeInterval = 0.27
     static let exitDuration: TimeInterval = 0.235
+    static let pageDuration: TimeInterval = 0.25
 
-    /// One native frame commit is enough: the render server owns every
-    /// intermediate content frame, including on high-refresh displays.
+    /// Avoid resizing the native viewport for content-only changes.
     static func needsFrameCommit(from current: CGRect, to target: CGRect) -> Bool {
         current != target
     }

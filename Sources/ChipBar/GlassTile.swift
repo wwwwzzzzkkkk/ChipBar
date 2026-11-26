@@ -7,11 +7,9 @@ struct GlassTileModifier: ViewModifier {
     let radius: CGFloat
     let tint: Color?
     let interactive: Bool
-    let highlightsEdges: Bool
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.compactDashboard) private var compact
-    @Environment(\.colorScheme) private var colorScheme
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: DashboardLayout.tileCornerRadius(radius, compact: compact),
@@ -24,29 +22,7 @@ struct GlassTileModifier: ViewModifier {
                 .background(Color(nsColor: .windowBackgroundColor), in: shape)
                 .overlay { shape.strokeBorder(.primary.opacity(0.14), lineWidth: 1) }
         } else if #available(macOS 26.0, *) {
-            content
-                .background {
-                    if highlightsEdges {
-                        shape.fill(LinearGradient(
-                            stops: [.init(color: .white.opacity(colorScheme == .dark ? 0.12 : 0.32), location: 0),
-                                    .init(color: .clear, location: 0.72)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .allowsHitTesting(false)
-                    }
-                }
-                .glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
-                .overlay {
-                    if highlightsEdges {
-                        let dark = colorScheme == .dark
-                        shape.strokeBorder(
-                            LinearGradient(colors: [.white.opacity(dark ? 0.28 : 0.86),
-                                                    .white.opacity(dark ? 0.09 : 0.42),
-                                                    .black.opacity(dark ? 0.22 : 0.13)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 1)
-                            .allowsHitTesting(false)
-                    }
-                }
+            content.glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
         } else {
             content
                 .background(.ultraThinMaterial, in: shape)
@@ -68,10 +44,8 @@ struct GlassTileModifier: ViewModifier {
 extension View {
     func glassTile(radius: CGFloat = 26,
                    tint: Color? = nil,
-                   interactive: Bool = false,
-                   highlightsEdges: Bool = false) -> some View {
-        modifier(GlassTileModifier(radius: radius, tint: tint, interactive: interactive,
-                                  highlightsEdges: highlightsEdges))
+                   interactive: Bool = false) -> some View {
+        modifier(GlassTileModifier(radius: radius, tint: tint, interactive: interactive))
     }
 }
 

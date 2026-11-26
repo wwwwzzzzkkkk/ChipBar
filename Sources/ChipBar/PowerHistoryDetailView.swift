@@ -68,7 +68,7 @@ struct PowerHistoryDetailView: View {
                     }
             }
             .padding(12)
-            .glassTile(radius: 20, tint: Color.primary.opacity(0.07), highlightsEdges: true)
+            .glassTile(radius: 26)
 
             eventStrip(events)
             inspector(selection: effectiveSelection, events: events)
@@ -174,7 +174,7 @@ struct PowerHistoryDetailView: View {
         }
         .padding(12)
         .frame(height: 96, alignment: .topLeading)
-        .glassTile(radius: 18, tint: Color.primary.opacity(0.07), highlightsEdges: true)
+        .glassTile(radius: 26)
     }
 
     private func metric(_ label: String, _ value: String) -> some View {

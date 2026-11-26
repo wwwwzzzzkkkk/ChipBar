@@ -6,10 +6,10 @@ struct HistoricalApplicationUsageView: View {
     let timeline: TrendTimeWindow
     @ObservedObject private var activity = ApplicationActivityModel.shared
     @State private var showsMemory = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let frame = date.flatMap { activity.history.nearest(to: $0, in: timeline) }
-        let rows = (showsMemory ? frame?.memory : frame?.cpu) ?? []
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(ChipBarLocale.choose("Application usage", "应用占用"))
@@ -20,16 +20,30 @@ struct HistoricalApplicationUsageView: View {
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                Picker(ChipBarLocale.choose("Historical app metric", "应用占用指标"), selection: $showsMemory) {
-                    Text("CPU").tag(false)
-                    Text(ChipBarLocale.choose("Memory", "内存")).tag(true)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
+                LiquidGlassSegmentedSelector(
+                    selection: $showsMemory,
+                    options: [.init(value: false, title: "CPU"),
+                              .init(value: true, title: ChipBarLocale.choose("Memory", "内存"))],
+                    accessibilityLabel: ChipBarLocale.choose("Historical app metric", "应用占用指标"),
+                    height: 26)
                 .frame(width: 110)
             }
+            ZStack(alignment: .topLeading) {
+                ranking(frame, showsMemory: showsMemory)
+                    .id(showsMemory)
+                    .transition(.opacity)
+            }
+            .frame(height: 51, alignment: .topLeading)
+            .animation(reduceMotion ? nil : ChipBarMotion.navigation, value: showsMemory)
+        }
+        .padding(12)
+        .frame(height: 120, alignment: .topLeading)
+        .glassTile(radius: 26)
+    }
 
+    @ViewBuilder private func ranking(_ frame: ApplicationUsageHistory.Frame?, showsMemory: Bool) -> some View {
+        let rows = (showsMemory ? frame?.memory : frame?.cpu) ?? []
+        VStack(alignment: .leading, spacing: 0) {
             if rows.isEmpty {
                 Text(frame == nil
                      ? ChipBarLocale.choose("No app sample near this time", "这一时刻附近没有应用采样")
@@ -47,7 +61,7 @@ struct HistoricalApplicationUsageView: View {
                         }
                         Text(row.name).lineLimit(1).truncationMode(.middle).help(row.name)
                         Spacer(minLength: 4)
-                        Text(reading(row)).monospacedDigit()
+                        Text(reading(row, showsMemory: showsMemory)).monospacedDigit()
                     }
                     .font(.caption)
                     .frame(height: 17)
@@ -55,9 +69,6 @@ struct HistoricalApplicationUsageView: View {
                 }
             }
         }
-        .padding(12)
-        .frame(height: 120, alignment: .topLeading)
-        .glassTile(radius: 18, tint: Color.primary.opacity(0.07), highlightsEdges: true)
     }
 
     private func time(_ date: Date) -> String {
@@ -65,7 +76,7 @@ struct HistoricalApplicationUsageView: View {
             .locale(Locale(identifier: "en_GB")))
     }
 
-    private func reading(_ row: ApplicationActivityRow) -> String {
+    private func reading(_ row: ApplicationActivityRow, showsMemory: Bool) -> String {
         if showsMemory {
             return ApplicationMemoryDisplay.text(bytes: row.physicalBytes,
                                                  approximate: row.memoryIsRSSApproximation)

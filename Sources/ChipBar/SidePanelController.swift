@@ -10,13 +10,24 @@ import QuartzCore
     override func cancelOperation(_ sender: Any?) { escape?() }
 }
 
+/// Keep the previous document visible while it fades inside the same glass
+/// viewport. Interactions, including keyboard focus, belong to the new page.
+@MainActor private final class OutgoingSidePanelPage: NSClipView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func accessibilityChildren() -> [Any]? { [] }
+}
+
 /// A second, independent native glass window. Resource and SMC samplers mount
 /// only while it is visible; the main menu retains its size and cached layout.
 @MainActor final class ChipBarSidePanelController {
     private let panel = ChipBarSideWindow(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                                           backing: .buffered, defer: false)
+    private let viewport = NSView(frame: .zero)
     private let scrollView = NSScrollView()
-    private let host = NSHostingView<AnyView>(rootView: AnyView(EmptyView()))
+    private var host = NSHostingView<AnyView>(rootView: AnyView(EmptyView()))
+    private var outgoingPage: OutgoingSidePanelPage?
+    private var pageCleanupTask: Task<Void, Never>?
+    private var pageResizeTask: Task<Void, Never>?
     private let state: DashboardState
     private let monitor: Monitor
     private let onClose: () -> Void
@@ -76,7 +87,9 @@ import QuartzCore
         scrollView.documentView = host
         host.setFrameSize(NSSize(width: SidePanelLayout.width,
                                  height: SidePanelLayout.applicationHeight))
-        let material = PanelMaterialView(contentView: scrollView)
+        scrollView.autoresizingMask = [.width, .height]
+        viewport.addSubview(scrollView)
+        let material = PanelMaterialView(contentView: viewport)
         panel.contentView = material
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -170,8 +183,12 @@ import QuartzCore
         lastParentHorizontalFrame = CGRect(x: parent.frame.minX, y: 0,
                                            width: parent.frame.width, height: 1)
         lastVisibleFrame = visible
+        let currentSide = panel.isVisible && SidePanelPlacement.isLegal(
+            panel.frame, beside: parent.frame, visible: visible)
+            ? SidePanelPlacement.side(of: panel.frame, beside: parent.frame) : nil
         guard let hint = SidePanelPlacement.choose(parent: parent.frame, visible: visible,
-            preferredWidth: width, preferredHeight: SidePanelLayout.height(for: kind)) else {
+            preferredWidth: width, preferredHeight: SidePanelLayout.height(for: kind),
+            stayingOn: currentSide) else {
             // Do not cover Home when neither side has a usable viewport.
             hide(animated: false)
             DispatchQueue.main.async { [weak self] in
@@ -188,14 +205,18 @@ import QuartzCore
         relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
+        pageResizeTask?.cancel()
+        pageResizeTask = nil
         let interrupted = revealPresentation()
 
         let needsRelocation = wasVisible && SidePanelPlacement.requiresRelocation(
             from: panel.frame, to: hint, parent: parent.frame, visible: visible)
         let preservingMotion = wasVisible && priorKind == kind && !needsRelocation && !wasRelocating
             && navigationDeadline > ProcessInfo.processInfo.systemUptime
+        let incomingOpacity = scrollView.contentView.layer?.presentation()?.opacity ?? 1
         if !preservingMotion {
             scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
+            clearOutgoingPage()
         }
 
         // The compositor reveals the glass and content together. Only commit
@@ -268,6 +289,10 @@ import QuartzCore
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
+        let crossfading = switchingInPlace && !wasRelocating && interrupted.fraction >= 0.999
+        if crossfading {
+            keepOutgoingPage(on: hint.side)
+        }
         host.setFrameSize(NSSize(width: width, height: SidePanelLayout.height(for: kind)))
         host.rootView = AnyView(DashboardSidePanelView(
             monitor: monitor, state: state, close: onClose,
@@ -301,7 +326,7 @@ import QuartzCore
         }
         guard let placement = SidePanelPlacement.choose(
             parent: parent.frame, visible: visible, preferredWidth: width,
-            preferredHeight: preferredHeight, top: requestedTop) else { return }
+            preferredHeight: preferredHeight, top: requestedTop, stayingOn: currentSide) else { return }
         let target = placement.frame
         let height = target.height
         let documentSize = NSSize(width: width, height: max(desiredHeight, height))
@@ -314,10 +339,12 @@ import QuartzCore
         openedOnRight = openRight
         if kind.fitsContentHeight { contentAnchoredTop = target.maxY }
 
-        // Commit the final legal geometry once, without synchronous
-        // display. Core Animation owns the slide, not a 16ms MainActor loop.
         if SidePanelNavigationMotion.needsFrameCommit(from: panel.frame, to: target) {
-            panel.setFrame(target, display: false)
+            if crossfading && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                resizeForPageTransition(to: target)
+            } else {
+                panel.setFrame(target, display: false)
+            }
         }
         let arriving = !wasVisible || expandAtDestination
         let resuming = !arriving && (priorKind == nil || wasRelocating || interrupted.fraction < 1)
@@ -329,8 +356,8 @@ import QuartzCore
             let duration = animateReveal(from: arriving ? .closed : interrupted,
                                          opening: true, side: placement.side)
             navigationDeadline = ProcessInfo.processInfo.systemUptime + duration
-        } else if switchingInPlace {
-            let duration = animatePageFromSeam(placement.side)
+        } else if crossfading {
+            let duration = animatePageFromSeam(placement.side, outgoingOpacity: incomingOpacity)
             navigationDeadline = ProcessInfo.processInfo.systemUptime + duration
         }
         // Pointer navigation can leave Home key, so its Liquid Glass stays
@@ -441,25 +468,91 @@ import QuartzCore
         return duration
     }
 
-    /// A switch between two open pages keeps their shared glass in place.
-    private func animatePageFromSeam(_ side: SidePanelPlacement.Side) -> TimeInterval {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              let content = scrollView.contentView.layer else { return 0 }
-        let slide = CABasicAnimation(keyPath: "transform.translation.x")
-        slide.fromValue = SidePanelNavigationMotion.edgeOffset(on: side)
-        slide.toValue = 0
-        slide.isAdditive = true
+    private func keepOutgoingPage(on side: SidePanelPlacement.Side) {
+        let clip = scrollView.contentView
+        let outgoing = OutgoingSidePanelPage(frame: clip.convert(clip.bounds, to: viewport))
+        outgoing.drawsBackground = false
+        outgoing.wantsLayer = true
+        outgoing.layer?.masksToBounds = true
+        outgoing.autoresizingMask = side == .left ? [.minXMargin, .minYMargin] : [.minYMargin]
+        let oldHost = host
+        let oldOffset = clip.bounds.origin
+        host = NSHostingView(rootView: AnyView(EmptyView()))
+        host.appearance = oldHost.appearance
+        host.isFlipped = true
+        scrollView.documentView = host
+        outgoing.documentView = oldHost
+        outgoing.scroll(to: oldOffset)
+        viewport.addSubview(outgoing, positioned: .above, relativeTo: scrollView)
+        outgoingPage = outgoing
+    }
+
+    private func clearOutgoingPage() {
+        pageCleanupTask?.cancel()
+        pageCleanupTask = nil
+        outgoingPage?.removeFromSuperview()
+        outgoingPage = nil
+    }
+
+    private func resizeForPageTransition(to target: CGRect) {
+        let start = panel.frame
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        pageResizeTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+                let progress = min(1, elapsed / SidePanelNavigationMotion.pageDuration)
+                let frame = SidePanelNavigationMotion.interpolatedFrame(from: start, to: target, progress: progress)
+                self.panel.setFrame(frame, display: false)
+                if progress == 1 {
+                    self.pageResizeTask = nil
+                    return
+                }
+                do { try await Task.sleep(for: .milliseconds(12)) }
+                catch { return }
+            }
+        }
+    }
+
+    /// The existing glass stays mounted while the previous content fades
+    /// out and the incoming content settles from the shared seam.
+    private func animatePageFromSeam(_ side: SidePanelPlacement.Side, outgoingOpacity: Float) -> TimeInterval {
+        guard let content = scrollView.contentView.layer,
+              let outgoing = outgoingPage?.layer else {
+            clearOutgoingPage()
+            return 0
+        }
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let duration = reduceMotion ? 0.15 : SidePanelNavigationMotion.pageDuration
         let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0.30
+        fade.fromValue = 0.0
         fade.toValue = 1
-        let duration = SidePanelNavigationMotion.enterDuration
-        slide.duration = duration
         fade.duration = duration
         let group = CAAnimationGroup()
-        group.animations = [slide, fade]
+        group.animations = [fade]
+        if !reduceMotion {
+            let slide = CABasicAnimation(keyPath: "transform.translation.x")
+            slide.fromValue = SidePanelNavigationMotion.edgeOffset(on: side)
+            slide.toValue = 0
+            slide.isAdditive = true
+            slide.duration = duration
+            group.animations?.append(slide)
+        }
         group.duration = duration
         group.timingFunction = revealTiming(opening: true)
         content.add(group, forKey: pageMotionKey)
+        let outgoingFade = CABasicAnimation(keyPath: "opacity")
+        outgoingFade.fromValue = outgoingOpacity
+        outgoingFade.toValue = 0
+        outgoingFade.duration = duration
+        outgoingFade.timingFunction = group.timingFunction
+        outgoing.opacity = 0
+        outgoing.add(outgoingFade, forKey: pageMotionKey)
+        pageCleanupTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(duration)) }
+            catch { return }
+            self?.clearOutgoingPage()
+        }
         return duration
     }
 
@@ -591,6 +684,8 @@ import QuartzCore
         relocationTask = nil
         closeMotionTask?.cancel()
         closeMotionTask = nil
+        pageResizeTask?.cancel()
+        pageResizeTask = nil
         contentFitTask?.cancel()
         contentFitTask = nil
         measuredContentHeight = 0
@@ -601,6 +696,7 @@ import QuartzCore
         contentAnchoredTop = nil
         let interrupted = revealPresentation()
         scrollView.contentView.layer?.removeAnimation(forKey: pageMotionKey)
+        clearOutgoingPage()
         guard animated, panel.isVisible else {
             panel.orderOut(nil)
             clearReveal()
