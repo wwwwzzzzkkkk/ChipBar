@@ -20,11 +20,20 @@ struct ActivitySnapshot: Sendable {
 /// Keep GPU-tab changes responsive without rescanning the full registry on
 /// every CPU, memory or ANE update.
 enum ApplicationActivitySamplingPolicy {
+    static let baselineInterval: TimeInterval = 0.7
+
     static func needsRefresh(_ snapshot: ActivitySnapshot?, includeGPU: Bool,
                              now: TimeInterval) -> Bool {
         guard let snapshot else { return true }
         return !ApplicationActivityCachePolicy.isFresh(sampledAt: snapshot.sampledAt, now: now)
             || (includeGPU && !snapshot.gpuSampled)
+    }
+
+    static func needsBaseline(_ snapshot: ActivitySnapshot, includeGPU: Bool) -> Bool {
+        if includeGPU {
+            return snapshot.gpuClientCount > 0 && !snapshot.rows.contains { $0.gpuPercent != nil }
+        }
+        return snapshot.readableCPUCount > 0 && !snapshot.rows.contains { $0.cpuPercent != nil }
     }
 }
 
@@ -230,16 +239,28 @@ actor ApplicationActivitySampler {
     func watch(interval: Int, includeGPU: Bool) async {
         visibleWatchers += 1
         defer { visibleWatchers -= 1 }
-        var sampleNext = ApplicationActivitySamplingPolicy.needsRefresh(
-            snapshot, includeGPU: includeGPU, now: ProcessInfo.processInfo.systemUptime)
-        while !Task.isCancelled {
-            if sampleNext {
-                let result = await sampleOnce(includeGPU: includeGPU)
-                guard !Task.isCancelled else { return }
-                publish(result)
+        let cadence = Double(max(1_000, interval)) / 1_000
+        let now = ProcessInfo.processInfo.systemUptime
+        if let snapshot, !ApplicationActivitySamplingPolicy.needsRefresh(snapshot, includeGPU: includeGPU, now: now) {
+            let delay = ApplicationActivitySamplingPolicy.needsBaseline(snapshot, includeGPU: includeGPU)
+                ? ApplicationActivitySamplingPolicy.baselineInterval : cadence
+            let remaining = delay - (now - snapshot.sampledAt)
+            if remaining > 0 {
+                do { try await Task.sleep(for: .seconds(remaining)) }
+                catch { return }
             }
-            sampleNext = true
-            do { try await Task.sleep(nanoseconds: UInt64(max(2000, interval)) * 1_000_000) }
+        }
+        var firstSample = true
+        while !Task.isCancelled {
+            let result = await sampleOnce(includeGPU: includeGPU)
+            guard !Task.isCancelled else { return }
+            publish(result)
+            // Only the first counter window can be shortened. Later samples
+            // follow the user’s interval, including when GPU data is unavailable.
+            let delay = firstSample && ApplicationActivitySamplingPolicy.needsBaseline(result, includeGPU: includeGPU)
+                ? ApplicationActivitySamplingPolicy.baselineInterval : cadence
+            firstSample = false
+            do { try await Task.sleep(for: .seconds(delay)) }
             catch { return }
         }
     }

@@ -6,15 +6,29 @@ enum ApplicationResource: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private struct ApplicationIconAnchors: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, newest in newest }
+    }
+}
+
 struct ApplicationUsageSection: View {
     @ObservedObject var monitor: Monitor
     @ObservedObject var state: DashboardState
     var showsDisclosure = true
     @StateObject private var activity = ApplicationActivityModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var samplingStartedInThisPanel = false
+    @State private var actions: ExitMenu?
     @State private var pendingExit: ExitConfirmation?
     @State private var exitMessage: String?
+
+    private struct ExitMenu {
+        let rowID: String
+        let target: ApplicationExitTarget
+        let snapshot: ActivitySnapshot
+    }
 
     private struct ExitConfirmation {
         let target: ApplicationExitTarget
@@ -60,17 +74,29 @@ struct ApplicationUsageSection: View {
             // remain available on hover and to assistive technologies.
             .help(explanation)
             .accessibilityHint(explanation)
+            if !monitor.paused, !monitor.sleeping, let snapshot = actions?.snapshot ?? activity.snapshot,
+               state.applicationMetric != .gpu || snapshot.gpuSampled {
+                let date = Date().addingTimeInterval(snapshot.sampledAt - ProcessInfo.processInfo.systemUptime)
+                Text(ChipBarLocale.choose("Updated", "更新于") + " " + date.formatted(.dateTime.hour().minute().second()))
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .overlayPreferenceValue(ApplicationIconAnchors.self) { anchors in
+            GeometryReader { geometry in
+                if let actions, let anchor = anchors[actions.rowID] {
+                    actionOverlay(actions, icon: geometry[anchor], size: geometry.size)
+                }
+            }
+        }
+        .onChange(of: state.applicationMetric) { _ in dismissActions() }
+        .onChange(of: monitor.paused || monitor.sleeping) { suspended in
+            if suspended { dismissActions() }
         }
         .task(id: "\(monitor.paused)-\(monitor.sleeping)-\(monitor.interval)-\(state.applicationMetric == .gpu)") {
             guard !monitor.paused, !monitor.sleeping else { return }
-            if !samplingStartedInThisPanel {
-                // Avoid hundreds of libproc reads competing with the first
-                // Liquid Glass layout. Subsequent metric changes are immediate.
-                do { try await Task.sleep(for: .milliseconds(350)) }
-                catch { return }
-                guard !Task.isCancelled else { return }
-                samplingStartedInThisPanel = true
-            }
             await activity.watch(interval: monitor.interval,
                                  includeGPU: state.applicationMetric == .gpu)
         }
@@ -96,40 +122,24 @@ struct ApplicationUsageSection: View {
     @ViewBuilder private func ranking(for metric: ApplicationResource) -> some View {
         if monitor.paused || monitor.sleeping {
             message("应用占用采样已暂停", symbol: "pause.circle")
-        } else if let snapshot = activity.snapshot {
+        } else if let snapshot = actions?.snapshot ?? activity.snapshot, metric != .gpu || snapshot.gpuSampled {
             let rows = rankedRows(snapshot, metric: metric)
             if !rows.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         HStack(spacing: 7) {
-                                Text("\(index + 1)").monospacedDigit()
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 15)
-                                    .accessibilityHidden(true)
-                                if let path = row.appPath {
-                                    Image(nsImage: ApplicationIconCache.icon(for: path))
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .frame(width: 15, height: 15)
-                                        .accessibilityHidden(true)
-                                } else {
-                                    Image(systemName: "app")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 15, height: 15)
-                                        .accessibilityHidden(true)
-                                }
+                            Text("\(index + 1)").monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(width: 15)
+                                .accessibilityHidden(true)
+                            applicationIcon(row, snapshot: snapshot)
                             Text(row.name).lineLimit(1).truncationMode(.middle)
                                 .help("\(row.name) · 合并 \(row.processCount) 个进程；只统计可读取的计数器")
                             Spacer(minLength: 5)
                             Text(formatted(row, metric: metric))
                                 .monospacedDigit()
                                 .foregroundStyle(.primary)
-                            if let path = row.appPath,
-                               let target = ApplicationExitTarget.running(at: path, named: row.name) {
-                                exitMenu(target)
-                            }
-                            }
+                        }
                         .font(.caption)
                         .frame(height: 28)
                         .opacity(index < 3 ? 1 : state.applicationsExpansion)
@@ -145,24 +155,82 @@ struct ApplicationUsageSection: View {
         }
     }
 
-    private func exitMenu(_ target: ApplicationExitTarget) -> some View {
-        Menu {
-            Button(ChipBarLocale.choose("Quit…", "退出…")) {
-                pendingExit = ExitConfirmation(target: target, force: false)
+    @ViewBuilder private func applicationIcon(_ row: ApplicationActivityRow, snapshot: ActivitySnapshot) -> some View {
+        if let path = row.appPath {
+            let icon = Image(nsImage: ApplicationIconCache.icon(for: path))
+                .resizable().interpolation(.high)
+                .frame(width: 17, height: 17)
+            if let target = ApplicationExitTarget.running(at: path, named: row.name) {
+                Button {
+                    withAnimation(actionAnimation(opening: true)) {
+                        actions = ExitMenu(rowID: row.id, target: target, snapshot: snapshot)
+                    }
+                } label: {
+                    icon.frame(width: 24, height: 26)
+                }
+                .buttonStyle(ChipBarPressStyle())
+                .accessibilityLabel(ChipBarLocale.choose("Actions for \(row.name)", "\(row.name) 的操作"))
+                .help(ChipBarLocale.choose("Show quit options", "显示退出选项"))
+                .anchorPreference(key: ApplicationIconAnchors.self, value: .bounds) { [row.id: $0] }
+            } else {
+                icon.frame(width: 24).accessibilityHidden(true)
             }
-            Button(ChipBarLocale.choose("Force Quit…", "强制退出…"), role: .destructive) {
-                pendingExit = ExitConfirmation(target: target, force: true)
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 22, height: 20)
-                .contentShape(Rectangle())
+        } else {
+            Image(systemName: "app").foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel(ChipBarLocale.choose("Actions for \(target.name)", "\(target.name) 的操作"))
+    }
+
+    private func actionAnimation(opening: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.15) : SidePanelNavigationMotion.animation(opening: opening)
+    }
+
+    private func dismissActions() {
+        withAnimation(actionAnimation(opening: false)) { actions = nil }
+    }
+
+    private func actionOverlay(_ menu: ExitMenu, icon: CGRect, size: CGSize) -> some View {
+        let width: CGFloat = 152
+        let height: CGFloat = 67
+        let below = icon.maxY + height + 4 <= size.height
+        let x = min(icon.minX, max(0, size.width - width))
+        let y = below ? icon.maxY + 3 : max(0, icon.minY - height - 3)
+        return ZStack(alignment: .topLeading) {
+            Button(action: dismissActions) {
+                Color.clear.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel(ChipBarLocale.choose("Close app actions", "关闭应用操作"))
+
+            VStack(spacing: 0) {
+                actionRow(ChipBarLocale.choose("Quit…", "退出…"), icon: "xmark.circle",
+                          menu: menu, force: false)
+                Divider().padding(.horizontal, 8)
+                actionRow(ChipBarLocale.choose("Force Quit…", "强制退出…"), icon: "exclamationmark.circle",
+                          menu: menu, force: true)
+            }
+            .padding(5)
+            .frame(width: width, height: height)
+            .glassTile(radius: 13)
+            .offset(x: x, y: y)
+        }
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: below ? -5 : 5)))
+    }
+
+    private func actionRow(_ title: String, icon: String, menu: ExitMenu, force: Bool) -> some View {
+        Button(role: force ? .destructive : nil) {
+            dismissActions()
+            pendingExit = ExitConfirmation(target: menu.target, force: force)
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(force ? Color.red : Color.primary)
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                .padding(.horizontal, 8)
+        }
+        .buttonStyle(ChipBarPressStyle())
     }
 
     private func exitConfirmation(_ request: ExitConfirmation) -> some View {
@@ -199,7 +267,7 @@ struct ApplicationUsageSection: View {
             .sorted {
                 let lhs = value($0, metric: metric) ?? 0, rhs = value($1, metric: metric) ?? 0
                 return lhs == rhs ? $0.id < $1.id : lhs > rhs
-            }.prefix(5))
+            }.prefix(showsDisclosure ? 5 : 3))
     }
 
     private func value(_ row: ApplicationActivityRow, metric: ApplicationResource) -> Double? {
