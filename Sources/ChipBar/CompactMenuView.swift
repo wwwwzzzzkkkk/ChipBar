@@ -179,7 +179,13 @@ import ChipBarCore
         guard rows > 0 else { return }
         let rowHeight = (height + pixel) / CGFloat(rows)
         let loads = displayedCoreLoads(at: ProcessInfo.processInfo.systemUptime)
-        let slot = NSColor(srgbRed: 0.03, green: 0.05, blue: 0.08, alpha: 0.10 * coreOpacity)
+        let levels = coreColumns.map { CGFloat(rows) * min(100, max(0, loads[$0.index])) / 100 }
+        let slot = NSColor(srgbRed: 0.03, green: 0.05, blue: 0.08, alpha: 0.16 * coreOpacity).cgColor
+
+        func coverage(at index: Int, cell: Int) -> CGFloat {
+            guard levels.indices.contains(index), cell >= 0 else { return 0 }
+            return min(1, max(0, levels[index] - CGFloat(cell)))
+        }
 
         context.saveGState()
         defer { context.restoreGState() }
@@ -189,7 +195,7 @@ import ChipBarCore
             let x = align(leading)
             let width = align(leading + columnWidth) - x
             guard width >= pixel else { continue }
-            let level = CGFloat(rows) * min(100, max(0, loads[column.index])) / 100
+            let level = levels[index]
             let (base, peak) = column.warm ? Self.warmLED : Self.coolLED
             for cell in 0..<rows {
                 let row = CGFloat(rows - 1 - cell)
@@ -198,21 +204,31 @@ import ChipBarCore
                 let rect = CGRect(x: x, y: y, width: width, height: lower - y)
                 let radius = min(pixel, rect.height / 2, width / 2)
                 let shape = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-                context.setFillColor(slot.cgColor)
+                context.setFillColor(slot)
                 context.addPath(shape)
                 context.fillPath()
 
-                let coverage = min(1, max(0, level - CGFloat(cell)))
-                guard coverage > 0 else { continue }
+                let lit = coverage(at: index, cell: cell)
+                // A lit LED reflects softly into its neighbouring sockets.
+                let neighbours = max(coverage(at: index, cell: cell - 1),
+                                     0.7 * coverage(at: index - 1, cell: cell),
+                                     0.7 * coverage(at: index + 1, cell: cell))
+                let reflection = (1 - lit) * neighbours
+                if reflection > 0 {
+                    context.setFillColor(base.withAlphaComponent(coreOpacity * reflection * 0.16).cgColor)
+                    context.addPath(shape)
+                    context.fillPath()
+                }
+                guard lit > 0 else { continue }
                 let highlight = max(0, 1 - abs(level - CGFloat(cell + 1)))
                 let rise = CGFloat(cell) / CGFloat(max(1, rows - 1))
                 let color = base.blended(withFraction: highlight, of: peak) ?? base
                 let halo = rect.insetBy(dx: -0.55 * pixel, dy: -0.55 * pixel)
-                context.setFillColor(color.withAlphaComponent(coreOpacity * coverage * (0.05 + 0.07 * highlight)).cgColor)
+                context.setFillColor(color.withAlphaComponent(coreOpacity * lit * (0.07 + 0.10 * highlight)).cgColor)
                 context.addPath(CGPath(roundedRect: halo, cornerWidth: radius + pixel / 2,
                                        cornerHeight: radius + pixel / 2, transform: nil))
                 context.fillPath()
-                context.setFillColor(color.withAlphaComponent(coreOpacity * coverage * (0.32 + 0.12 * rise + 0.16 * highlight)).cgColor)
+                context.setFillColor(color.withAlphaComponent(coreOpacity * lit * (0.43 + 0.10 * rise + 0.17 * highlight)).cgColor)
                 context.addPath(shape)
                 context.fillPath()
             }
