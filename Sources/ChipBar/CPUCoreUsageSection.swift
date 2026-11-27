@@ -1,8 +1,20 @@
 import SwiftUI
 
+enum CPUCorePalette {
+    static func color(_ title: String?) -> Color {
+        switch title {
+        case "超级核": return .orange
+        case "性能核": return .cyan
+        case "能效核": return Color(red: 0.31, green: 0.87, blue: 0.77)
+        default: return .accentColor
+        }
+    }
+}
+
 struct CPUCoreUsageSection: View {
     let samplingInterval: Int
     let active: Bool
+    var sampledByMenu = false
     @StateObject private var model = CPUCoreLoadModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.compactDashboard) private var compact
@@ -19,23 +31,8 @@ struct CPUCoreUsageSection: View {
         return topology.namesByLogicalID[id] ?? "类型未确认"
     }
 
-    private func tierColor(_ title: String) -> Color {
-        switch title {
-        case "超级核": return .orange
-        case "性能核": return .cyan
-        case "能效核": return Color(red: 0.31, green: 0.87, blue: 0.77)
-        default: return .accentColor
-        }
-    }
-
     private func coreTint(_ id: Int) -> Color {
-        guard verifiedCoreLabels else { return .accentColor }
-        switch topology.namesByLogicalID[id] {
-        case "超级核": return .orange
-        case "性能核": return .cyan
-        case "能效核": return Color(red: 0.31, green: 0.87, blue: 0.77)
-        default: return .accentColor
-        }
+        CPUCorePalette.color(verifiedCoreLabels ? topology.namesByLogicalID[id] : nil)
     }
 
     var body: some View {
@@ -47,7 +44,7 @@ struct CPUCoreUsageSection: View {
                     ForEach(Array(topology.levels.enumerated()), id: \.offset) { _, tier in
                         HStack(spacing: 3) {
                             Circle()
-                                .fill(tierColor(tier.shortTitle))
+                                .fill(CPUCorePalette.color(tier.shortTitle))
                                 .frame(width: 6, height: 6)
                             Text("\(tier.shortTitle) \(tier.count)")
                                 .lineLimit(1)
@@ -90,8 +87,8 @@ struct CPUCoreUsageSection: View {
         }
         .padding(.horizontal, 10).padding(.vertical, compact ? 8 : 9)
         .glassTile(radius: 26)
-        .task(id: "\(samplingInterval)-\(active)") {
-            guard active else { return }
+        .task(id: "\(samplingInterval)-\(active)-\(sampledByMenu)") {
+            guard active, !sampledByMenu else { return }
             await model.watch(intervalMillis: samplingInterval)
         }
     }

@@ -57,8 +57,7 @@ actor CPUCoreSampler {
     }
 }
 
-/// Model is shared to keep a valid reading if the user briefly enters
-/// Settings. Sampling stops when no dashboard view is displaying the chart.
+/// Shares core readings between the dashboard chart and the menu bar.
 @MainActor final class CPUCoreLoadModel: ObservableObject {
     static let shared = CPUCoreLoadModel()
     @Published private(set) var values: [Double] = []

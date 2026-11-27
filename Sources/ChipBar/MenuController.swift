@@ -141,6 +141,9 @@ enum StatusPanelMotion {
     private var globalEvents: Any?
     private var observers: [NSObjectProtocol] = []
     private let compactMenu = CompactMenuView()
+    private var menuCoreTask: Task<Void, Never>?
+    private var menuCoreSubscription: AnyCancellable?
+    private var menuCoreInterval: Int?
     private var mouseQATrace: [[String: Any]]?
 
     init(monitor: Monitor) {
@@ -205,8 +208,13 @@ enum StatusPanelMotion {
             await monitor?.sampleMenuSources()
             return monitor?.menuSnapshot ?? MenuSnapshot()
         }, render: { [weak self] snapshot in self?.renderMenu(snapshot) })
+        menuCoreSubscription = CPUCoreLoadModel.shared.$values.sink { [weak self] values in
+            self?.updateMenuCoreBackground(values)
+        }
         configureMenuRefresh()
         menuPreferences = Publishers.MergeMany([
+            monitor.$menuPixelBackgroundEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            monitor.$menuPixelOpacity.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             monitor.$menuItems.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             monitor.$menuMetric.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             monitor.$interval.dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -533,7 +541,22 @@ enum StatusPanelMotion {
         })
     }
 
+    private func updateMenuCoreBackground(_ values: [Double]) {
+        let opacity = monitor.paused || monitor.sleeping ? 0 : monitor.effectiveMenuPixelOpacity
+        compactMenu.updateCoreBackground(values, opacity: opacity)
+    }
+
     private func configureMenuRefresh() {
+        let interval = !monitor.paused && !monitor.sleeping && monitor.effectiveMenuPixelOpacity > 0
+            ? monitor.interval : nil
+        if interval != menuCoreInterval {
+            menuCoreTask?.cancel()
+            menuCoreTask = interval.map { interval in
+                Task { await CPUCoreLoadModel.shared.watch(intervalMillis: interval) }
+            }
+            menuCoreInterval = interval
+        }
+        updateMenuCoreBackground(CPUCoreLoadModel.shared.values)
         menuRefresh.display(monitor.menuSnapshot)
         // CPU/GPU/ANE data arrives via Monitor's published samples. Only
         // network and disk rates need a second, separately sampled clock.

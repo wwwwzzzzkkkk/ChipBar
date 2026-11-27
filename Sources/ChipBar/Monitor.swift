@@ -44,6 +44,14 @@ enum NetworkSamplingPolicy {
     @Published private(set) var sleeping = false
     @Published private(set) var connected = false
     @Published private(set) var memoryPressure: MemoryPressureLevel = .unknown
+    @Published var menuPixelBackgroundEnabled = UserDefaults.standard.object(forKey: "menuPixelBackgroundEnabled") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(menuPixelBackgroundEnabled, forKey: "menuPixelBackgroundEnabled") }
+    }
+    @Published var menuPixelOpacity = min(1, max(0,
+        (UserDefaults.standard.object(forKey: "menuPixelOpacity") as? NSNumber)?.doubleValue ?? 0.62)) {
+        didSet { UserDefaults.standard.set(menuPixelOpacity, forKey: "menuPixelOpacity") }
+    }
+    var effectiveMenuPixelOpacity: Double { menuPixelBackgroundEnabled ? menuPixelOpacity : 0 }
     @Published var menuItems: Set<MenuContent> {
         didSet {
             UserDefaults.standard.set(menuItems.map(\.rawValue), forKey: "menuItems")

@@ -312,7 +312,8 @@ struct Dashboard: View {
                 active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping)
         case .cpuCores:
             CPUCoreUsageSection(samplingInterval: monitor.interval,
-                                active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping)
+                                active: monitor.dashboardVisible && !monitor.paused && !monitor.sleeping,
+                                sampledByMenu: monitor.effectiveMenuPixelOpacity > 0)
         case .fan:
             homeFanTile
         case .ane:
@@ -666,6 +667,22 @@ struct Dashboard: View {
                         Label("选择显示温度的 SSD", systemImage: "externaldrive")
                     }
                     .font(.caption)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    Toggle(ChipBarLocale.choose("CPU pixel background", "CPU 像素背景"),
+                           isOn: $monitor.menuPixelBackgroundEnabled)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    HStack {
+                        Text(ChipBarLocale.choose("CPU background opacity", "CPU 像素背景不透明度"))
+                        Spacer()
+                        Text(monitor.menuPixelOpacity.formatted(.percent.precision(.fractionLength(0))))
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    .font(.caption)
+                    Slider(value: $monitor.menuPixelOpacity, in: 0...1, step: 0.01)
+                        .accessibilityLabel(ChipBarLocale.choose("CPU background opacity", "CPU 像素背景不透明度"))
+                        .disabled(!monitor.menuPixelBackgroundEnabled)
                 }
                 if monitor.menuItems.contains(.power) {
                     LiquidGlassSegmentedSelector(
